@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import Callable, Sequence
 from importlib import import_module
@@ -8,6 +9,8 @@ from .routers.documents import DOCUMENT_ROUTES
 from .routers.export import EXPORT_ROUTES
 from .routers.generate import GENERATE_ROUTES
 from .routers.rag import RAG_ROUTES
+from .routers.system import SYSTEM_ROUTES
+from .core.rabbitmq import ensure_topology
 
 
 fastapi_module = import_module("fastapi")
@@ -16,6 +19,7 @@ FastAPI = getattr(fastapi_module, "FastAPI")
 CORSMiddleware = getattr(middleware_module, "CORSMiddleware")
 
 app = FastAPI(title="P2M-TAI API", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 
 def _get_allowed_origins() -> list[str]:
@@ -29,6 +33,11 @@ app.add_middleware(
   allow_methods=["*"],
   allow_headers=["*"],
 )
+
+try:
+  ensure_topology()
+except Exception as error:
+  logger.warning("RabbitMQ topology bootstrap skipped: %s", error)
 
 
 @app.get("/health")
@@ -56,5 +65,6 @@ for route_group in [
   RAG_ROUTES,
   GENERATE_ROUTES,
   EXPORT_ROUTES,
+  SYSTEM_ROUTES,
 ]:
   _register_routes(route_group)

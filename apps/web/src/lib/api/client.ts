@@ -10,6 +10,33 @@ export type UploadedDocument = {
   status: string;
 };
 
+export type ProcessingStage =
+  | "uploaded"
+  | "ocr_processing"
+  | "ocr_complete"
+  | "nlp_completed"
+  | "embedding_complete"
+  | "ocr_failed";
+
+const statusOrder: ProcessingStage[] = [
+  "uploaded",
+  "ocr_processing",
+  "ocr_complete",
+  "nlp_completed",
+  "embedding_complete",
+];
+
+export function getStatusProgress(status: string): number {
+  if (status === "ocr_failed") {
+    return 100;
+  }
+  const index = statusOrder.findIndex((item) => item === status);
+  if (index < 0) {
+    return 0;
+  }
+  return Math.round(((index + 1) / statusOrder.length) * 100);
+}
+
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? defaultApiBaseUrl;
 }
@@ -81,4 +108,39 @@ export async function deleteDocument(documentId: string): Promise<void> {
   };
 
   throw new Error(payload.detail ?? "Failed to delete document");
+}
+
+export type MessagingStatus = {
+  rabbitmq: {
+    connected: boolean;
+    detail: string;
+  };
+  topology: {
+    exchange: string;
+    exchange_type: string;
+    queues: {
+      ocr: string;
+      nlp: string;
+      embedding: string;
+      compliance: string;
+    };
+    event_flow: string[];
+  };
+};
+
+export async function fetchMessagingStatus(): Promise<MessagingStatus> {
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/system/messaging`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as MessagingStatus & {
+    detail?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.detail ?? "Failed to load messaging status");
+  }
+
+  return payload;
 }

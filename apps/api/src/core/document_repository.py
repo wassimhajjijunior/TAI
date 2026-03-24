@@ -192,6 +192,22 @@ def delete_document(document_id: str, tenant_id: str) -> bool:
   return True
 
 
+def update_document_status(document_id: str, tenant_id: str, status: str) -> bool:
+  existing = get_document(document_id, tenant_id)
+  if existing is None:
+    return False
+
+  client = _get_client()
+  _ = (
+    client.table("documents")
+    .update({"status": status})
+    .eq("id", document_id)
+    .eq("tenant_id", tenant_id)
+    .execute()
+  )
+  return True
+
+
 def to_dict(document: DocumentRecord) -> dict[str, object]:
   return {
     "id": document.id,

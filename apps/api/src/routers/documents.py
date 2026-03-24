@@ -3,6 +3,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from ..core import document_repository
+from ..core.file_storage import save_uploaded_file
+from ..core.pipeline_events import EVENT_DOCUMENT_UPLOADED, build_event
+from ..core.rabbitmq import publish_event
 
 
 fastapi_module = import_module("fastapi")
@@ -66,6 +69,24 @@ async def upload_document(file: Any = File(...)) -> dict[str, object]:
     size_bytes=size_bytes,
     content_type=content_type,
   )
+
+  storage_path = save_uploaded_file(stored.id, filename, content)
+
+  _ = document_repository.update_document_status(stored.id, DEFAULT_TENANT_ID, "ocr_processing")
+  upload_event = build_event(
+    EVENT_DOCUMENT_UPLOADED,
+    {
+      "document_id": stored.id,
+      "tenant_id": DEFAULT_TENANT_ID,
+      "filename": filename,
+      "storage_path": storage_path,
+      "content_type": content_type,
+      "size_bytes": size_bytes,
+      "status": "ocr_processing",
+    },
+  )
+  publish_event(EVENT_DOCUMENT_UPLOADED, upload_event)
+
   return {
     "document": document_repository.to_dict(stored),
   }

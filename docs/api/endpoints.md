@@ -8,6 +8,7 @@
 - GET `/api/v1/documents/{id}/status`
 - GET `/api/v1/documents/{id}/requirements`
 - GET `/api/v1/documents/{id}/compliance`
+- GET `/api/v1/system/messaging`
 - GET/PUT `/api/v1/company/profile`
 - GET/POST `/api/v1/company/annexes`
 
@@ -18,6 +19,14 @@
 - Accepted MIME types: `application/pdf`, `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`
 - Max file size: `20 MB`
 - Response: `{ document: UploadedDocument }`
+- Side effect: publishes RabbitMQ event `document_uploaded`
+
+### GET `/api/v1/system/messaging`
+
+- Response includes:
+  - RabbitMQ connectivity (`connected`, `detail`)
+  - Topology metadata (`exchange`, `exchange_type`, queue names)
+  - Pipeline flow events in order (`document_uploaded` → `ocr_complete` → `nlp_completed` → `embedding_complete`)
 
 ## Track B
 
@@ -59,3 +68,16 @@ The payload contracts are centralized in `packages/shared-types/src/index.ts`.
 ### GET `/api/v1/exports/{id}/download`
 
 - Response: `ExportRecord`
+
+## Event-Driven Pipeline (Track A)
+
+The ingestion flow is event-driven through RabbitMQ:
+
+`document_uploaded` → `ocr_complete` → `nlp_completed` → `embedding_complete`
+
+- Exchange: `p2m.events` (topic, durable)
+- Queues:
+  - `track_a.ocr.queue`
+  - `track_a.nlp.queue`
+  - `track_a.embedding.queue`
+  - `track_a.compliance.queue`
