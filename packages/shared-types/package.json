@@ -1,0 +1,6 @@
+{
+  "name": "@p2m/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "types": "src/index.ts"
+}

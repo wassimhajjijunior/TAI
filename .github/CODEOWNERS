@@ -1,0 +1,29 @@
+/apps/web/src/app/dashboard/ @track-a-owner
+/apps/web/src/app/documents/new/ @track-a-owner
+/apps/web/src/app/documents/[id]/ @track-a-owner
+/apps/web/src/app/documents/[id]/compliance/ @track-a-owner
+/apps/web/src/app/settings/ @track-a-owner
+/apps/web/src/components/upload/ @track-a-owner
+/apps/web/src/components/compliance/ @track-a-owner
+/apps/api/src/routers/documents.py @track-a-owner
+/apps/api/src/routers/compliance.py @track-a-owner
+/apps/api/src/routers/company.py @track-a-owner
+/apps/api/src/services/ocr/ @track-a-owner
+/apps/api/src/services/nlp/ @track-a-owner
+/apps/api/src/services/embedding/ @track-a-owner
+/apps/api/src/services/compliance/ @track-a-owner
+
+/apps/web/src/app/documents/[id]/respond/ @track-b-owner
+/apps/web/src/app/documents/[id]/export/ @track-b-owner
+/apps/web/src/components/editor/ @track-b-owner
+/apps/web/src/components/rag/ @track-b-owner
+/apps/web/src/components/export/ @track-b-owner
+/apps/api/src/routers/rag.py @track-b-owner
+/apps/api/src/routers/generate.py @track-b-owner
+/apps/api/src/routers/export.py @track-b-owner
+/apps/api/src/services/rag/ @track-b-owner
+/apps/api/src/services/llm/ @track-b-owner
+/apps/api/src/services/export/ @track-b-owner
+
+/packages/shared-types/ @track-a-owner @track-b-owner
+/infra/supabase/migrations/ @track-a-owner @track-b-owner
