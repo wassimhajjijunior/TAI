@@ -11,6 +11,14 @@
 - GET/PUT `/api/v1/company/profile`
 - GET/POST `/api/v1/company/annexes`
 
+### POST `/api/v1/documents` (current first-step implementation)
+
+- Content-Type: `multipart/form-data`
+- Field: `file`
+- Accepted MIME types: `application/pdf`, `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `text/plain`
+- Max file size: `20 MB`
+- Response: `{ document: UploadedDocument }`
+
 ## Track B
 
 - POST `/api/v1/rag/query`

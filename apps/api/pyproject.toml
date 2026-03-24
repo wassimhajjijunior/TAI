@@ -5,6 +5,9 @@ description = "P2M-TAI FastAPI backend scaffold"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
+  "python-multipart>=0.0.9",
+  "python-dotenv>=1.0.1",
+  "supabase>=2.7.4",
   "uvicorn>=0.30.0",
   "pydantic>=2.8.0"
 ]

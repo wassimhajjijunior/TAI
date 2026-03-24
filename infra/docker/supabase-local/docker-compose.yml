@@ -1,1 +1,15 @@
-services: {}
+services:
+  db:
+    image: supabase/postgres:15.8.1.092
+    container_name: supabase-db
+    restart: always
+    ports:
+      - "54322:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - supabase_db_data:/var/lib/postgresql/data
+
+volumes:
+  supabase_db_data:
