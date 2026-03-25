@@ -176,6 +176,56 @@ docker compose -f infra/docker/supabase-local/docker-compose.yml up -d
 - `POST /api/v1/documents` persists metadata in Supabase `documents` table
 - Existing uploaded files are listed on the same page
 - Files can be deleted from UI (`DELETE /api/v1/documents/{id}`)
+- Processing status is now shown in UI with polling progress
+- Upload publishes `document_uploaded` event to RabbitMQ
+
+### OCR Worker (Mistral AI)
+
+Track A OCR worker consumes `document_uploaded` and publishes `ocr_complete`.
+
+Run OCR worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.ocr.run_worker
+```
+
+Required env vars in `apps/api/.env`:
+
+- `RABBITMQ_URL`
+- `MISTRAL_API_KEY`
+
+### NLP Worker (Track A)
+
+Track A NLP worker consumes `ocr_complete` and publishes `nlp_completed`.
+
+Run NLP worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.nlp.run_worker
+```
+
+NLP stack used in worker:
+
+- `langdetect` for language detection
+- `spacy` (French blank pipeline + sentencizer) for sentence boundary chunking
+- `deep-translator` (`GoogleTranslator`) for FR→EN chunk translation
+
+Notes about API keys/services:
+
+- `langdetect` and `spacy` (blank pipeline mode) do not require external API keys
+- `deep-translator` GoogleTranslator uses a free web translation backend (no project API key configured in current implementation)
+- For production stability, you may later switch translation to a paid API-backed provider
+
+How OCR source is resolved:
+
+- Upload endpoint stores incoming file in local backend path:
+  - `apps/api/storage/documents/`
+- `document_uploaded` event includes `storage_path`
+- OCR worker uploads that file to Mistral Files API, gets signed URL, then runs OCR
+
+Pipeline events used now:
+
+`document_uploaded` → `ocr_complete` → `nlp_completed` → `embedding_complete`
 
 ### Key upload constraints
 

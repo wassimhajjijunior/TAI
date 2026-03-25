@@ -1,8 +1,17 @@
 "use client";
 
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { FileUp, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
-import { deleteDocument, fetchDocuments, uploadDocument, type UploadedDocument } from "@/lib/api/client";
+import { Activity, FileUp, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
+import {
+  deleteDocument,
+  fetchDocuments,
+  fetchMessagingStatus,
+  getApiWebSocketBaseUrl,
+  getStatusProgress,
+  uploadDocument,
+  type MessagingStatus,
+  type UploadedDocument,
+} from "@/lib/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,11 +55,25 @@ export function DocumentUploadDropzone() {
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const [documentsError, setDocumentsError] = useState("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(true);
+  const [messagingStatus, setMessagingStatus] = useState<MessagingStatus | null>(null);
+  const [isLoadingMessaging, setIsLoadingMessaging] = useState(true);
+  const [messagingError, setMessagingError] = useState("");
+  const isMessagingRequestInFlightRef = useRef(false);
+  const websocketRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
 
-  async function loadDocuments() {
-    setIsLoadingDocuments(true);
-    setDocumentsError("");
+  async function loadDocuments(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+
+    if (!isMountedRef.current) {
+      return;
+    }
+    if (!silent) {
+      setIsLoadingDocuments(true);
+      setDocumentsError("");
+    }
 
     try {
       const items = await fetchDocuments();
@@ -62,7 +85,7 @@ export function DocumentUploadDropzone() {
         setDocumentsError(error instanceof Error ? error.message : "Failed to load documents");
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && !silent) {
         setIsLoadingDocuments(false);
       }
     }
@@ -85,15 +108,139 @@ export function DocumentUploadDropzone() {
     }
   }
 
+  async function loadMessagingStatus(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+
+    if (!isMountedRef.current) {
+      return;
+    }
+
+    if (isMessagingRequestInFlightRef.current) {
+      return;
+    }
+
+    isMessagingRequestInFlightRef.current = true;
+
+    if (!silent) {
+      setIsLoadingMessaging(true);
+      setMessagingError("");
+    }
+
+    try {
+      const status = await fetchMessagingStatus();
+      if (isMountedRef.current) {
+        setMessagingStatus(status);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        setMessagingError(error instanceof Error ? error.message : "Failed to load messaging status");
+      }
+    } finally {
+      isMessagingRequestInFlightRef.current = false;
+      if (isMountedRef.current && !silent) {
+        setIsLoadingMessaging(false);
+      }
+    }
+  }
+
   const uploadProgress = useMemo(() => (uploaded ? 100 : 0), [uploaded]);
+
+  const hasProcessingDocuments = useMemo(
+    () => documents.some((item) => item.status === "ocr_processing"),
+    [documents]
+  );
 
   useEffect(() => {
     void loadDocuments();
+    void loadMessagingStatus();
+
+    const onVisibilityChange = () => {
+      setIsTabVisible(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       isMountedRef.current = false;
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      websocketRef.current?.close();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    const connect = () => {
+      if (isDisposed || !isMountedRef.current) {
+        return;
+      }
+
+      const ws = new WebSocket(`${getApiWebSocketBaseUrl()}/api/v1/live/documents`);
+      websocketRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as {
+            type?: string;
+            items?: UploadedDocument[];
+          };
+          if (payload.type === "documents.updated" && Array.isArray(payload.items) && isMountedRef.current) {
+            setDocuments(payload.items);
+            setIsLoadingDocuments(false);
+            setDocumentsError("");
+          }
+        } catch {
+        }
+      };
+
+      ws.onclose = () => {
+        if (isDisposed || !isMountedRef.current) {
+          return;
+        }
+        reconnectTimeoutRef.current = window.setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      websocketRef.current?.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasProcessingDocuments || !isTabVisible) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadDocuments({ silent: true });
+    }, 3000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [hasProcessingDocuments, isTabVisible]);
+
+  useEffect(() => {
+    if (!hasProcessingDocuments || !isTabVisible) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadMessagingStatus({ silent: true });
+    }, 15000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [hasProcessingDocuments, isTabVisible]);
 
   async function processFile(file: File) {
     if (!isSupportedType(file)) {
@@ -276,6 +423,65 @@ export function DocumentUploadDropzone() {
 
       <Card className="md:col-span-2">
         <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="size-4 text-primary" />
+            Messaging & pipeline status
+          </CardTitle>
+          <CardDescription>
+            RabbitMQ connectivity and Track A event flow used by OCR and downstream services.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLoadingMessaging ? <p className="text-sm text-muted-foreground">Loading messaging status...</p> : null}
+
+          {messagingError ? (
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {messagingError}
+            </p>
+          ) : null}
+
+          {!isLoadingMessaging && !messagingError && messagingStatus ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
+                <span className="text-muted-foreground">Broker connectivity</span>
+                <Badge variant={messagingStatus.rabbitmq.connected ? "default" : "destructive"}>
+                  {messagingStatus.rabbitmq.connected ? "Connected" : "Disconnected"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{messagingStatus.rabbitmq.detail}</span>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Exchange</p>
+                <p className="font-mono text-xs">
+                  {messagingStatus.topology.exchange} ({messagingStatus.topology.exchange_type})
+                </p>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <p className="mb-2 text-xs text-muted-foreground">Event flow</p>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {messagingStatus.topology.event_flow.map((event, index) => (
+                    <div key={event} className="flex items-center gap-2">
+                      <Badge variant="secondary">{event}</Badge>
+                      {index < messagingStatus.topology.event_flow.length - 1 ? (
+                        <span className="text-muted-foreground">→</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </CardContent>
+        <CardFooter className="justify-end">
+          <Button type="button" variant="outline" onClick={() => void loadMessagingStatus()} disabled={isLoadingMessaging}>
+            Refresh messaging
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card className="md:col-span-2">
+        <CardHeader>
           <CardTitle className="text-base">Existing files in database</CardTitle>
           <CardDescription>
             Files already uploaded and stored in Supabase documents table.
@@ -305,7 +511,10 @@ export function DocumentUploadDropzone() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{item.status}</Badge>
+                    <Badge variant={item.status === "ocr_failed" ? "destructive" : "secondary"}>{item.status}</Badge>
+                    <div className="w-28">
+                      <Progress value={getStatusProgress(item.status)} />
+                    </div>
                     <Button
                       type="button"
                       size="sm"
