@@ -41,6 +41,18 @@ export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? defaultApiBaseUrl;
 }
 
+
+export function getApiWebSocketBaseUrl(): string {
+  const apiBase = getApiBaseUrl();
+  if (apiBase.startsWith("https://")) {
+    return `wss://${apiBase.slice("https://".length)}`;
+  }
+  if (apiBase.startsWith("http://")) {
+    return `ws://${apiBase.slice("http://".length)}`;
+  }
+  return `ws://${apiBase}`;
+}
+
 export async function fetchApiHealth(): Promise<{ status: string }> {
   const response = await fetch(`${getApiBaseUrl()}/health`, {
     method: "GET",

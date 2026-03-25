@@ -194,6 +194,28 @@ Required env vars in `apps/api/.env`:
 - `RABBITMQ_URL`
 - `MISTRAL_API_KEY`
 
+### NLP Worker (Track A)
+
+Track A NLP worker consumes `ocr_complete` and publishes `nlp_completed`.
+
+Run NLP worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.nlp.run_worker
+```
+
+NLP stack used in worker:
+
+- `langdetect` for language detection
+- `spacy` (French blank pipeline + sentencizer) for sentence boundary chunking
+- `deep-translator` (`GoogleTranslator`) for FR→EN chunk translation
+
+Notes about API keys/services:
+
+- `langdetect` and `spacy` (blank pipeline mode) do not require external API keys
+- `deep-translator` GoogleTranslator uses a free web translation backend (no project API key configured in current implementation)
+- For production stability, you may later switch translation to a paid API-backed provider
+
 How OCR source is resolved:
 
 - Upload endpoint stores incoming file in local backend path:

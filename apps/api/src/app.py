@@ -8,6 +8,7 @@ from .routers.compliance import COMPLIANCE_ROUTES
 from .routers.documents import DOCUMENT_ROUTES
 from .routers.export import EXPORT_ROUTES
 from .routers.generate import GENERATE_ROUTES
+from .routers.live import register_websocket_routes
 from .routers.rag import RAG_ROUTES
 from .routers.system import SYSTEM_ROUTES
 from .core.rabbitmq import ensure_topology
@@ -68,3 +69,6 @@ for route_group in [
   SYSTEM_ROUTES,
 ]:
   _register_routes(route_group)
+
+
+register_websocket_routes(app)

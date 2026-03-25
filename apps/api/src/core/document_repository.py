@@ -14,6 +14,8 @@ class DocumentRow(TypedDict):
   status: str
   size_bytes: int
   content_type: str
+  chunk_count: int
+  metadata: dict[str, object] | None
   created_at: str
 
 
@@ -30,6 +32,8 @@ class DocumentRecord:
   status: str
   size_bytes: int
   content_type: str
+  chunk_count: int
+  metadata: dict[str, object] | None
   created_at: str
 
 
@@ -62,6 +66,17 @@ def _to_record(row: dict[str, object]) -> DocumentRecord:
   else:
     size_bytes = 0
 
+  chunk_count_value = row.get("chunk_count", 0)
+  if isinstance(chunk_count_value, int):
+    chunk_count = chunk_count_value
+  elif isinstance(chunk_count_value, str) and chunk_count_value.isdigit():
+    chunk_count = int(chunk_count_value)
+  else:
+    chunk_count = 0
+
+  metadata_value = row.get("metadata")
+  metadata = metadata_value if isinstance(metadata_value, dict) else None
+
   return DocumentRecord(
     id=str(row["id"]),
     tenant_id=str(row["tenant_id"]),
@@ -69,6 +84,8 @@ def _to_record(row: dict[str, object]) -> DocumentRecord:
     status=str(row["status"]),
     size_bytes=size_bytes,
     content_type=str(row.get("content_type", "application/octet-stream")),
+    chunk_count=chunk_count,
+    metadata=cast(dict[str, object] | None, metadata),
     created_at=str(row.get("created_at", datetime.now(timezone.utc).isoformat())),
   )
 
@@ -82,6 +99,8 @@ def create_document(tenant_id: str, filename: str, size_bytes: int, content_type
     "status": "uploaded",
     "size_bytes": size_bytes,
     "content_type": content_type,
+    "chunk_count": 0,
+    "metadata": None,
     "created_at": datetime.now(timezone.utc).isoformat(),
   }
   client = _get_client()
@@ -97,6 +116,8 @@ def create_document(tenant_id: str, filename: str, size_bytes: int, content_type
       "tenant_id": row["tenant_id"],
       "filename": row["filename"],
       "status": row["status"],
+      "chunk_count": row["chunk_count"],
+      "metadata": row["metadata"],
       "created_at": row["created_at"],
     }
     result = client.table("documents").insert(fallback_row).execute()
@@ -108,6 +129,8 @@ def create_document(tenant_id: str, filename: str, size_bytes: int, content_type
   normalized = cast(dict[str, object], inserted)
   normalized.setdefault("size_bytes", size_bytes)
   normalized.setdefault("content_type", content_type)
+  normalized.setdefault("chunk_count", 0)
+  normalized.setdefault("metadata", None)
   return _to_record(normalized)
 
 
@@ -116,7 +139,7 @@ def list_documents(tenant_id: str) -> list[DocumentRecord]:
   try:
     result = (
       client.table("documents")
-      .select("id,tenant_id,filename,status,size_bytes,content_type,created_at")
+      .select("id,tenant_id,filename,status,size_bytes,content_type,chunk_count,metadata,created_at")
       .eq("tenant_id", tenant_id)
       .order("created_at", desc=True)
       .execute()
@@ -127,7 +150,7 @@ def list_documents(tenant_id: str) -> list[DocumentRecord]:
       raise
     result = (
       client.table("documents")
-      .select("id,tenant_id,filename,status,created_at")
+      .select("id,tenant_id,filename,status,chunk_count,metadata,created_at")
       .eq("tenant_id", tenant_id)
       .order("created_at", desc=True)
       .execute()
@@ -139,6 +162,8 @@ def list_documents(tenant_id: str) -> list[DocumentRecord]:
     normalized = cast(dict[str, object], item)
     normalized.setdefault("size_bytes", 0)
     normalized.setdefault("content_type", "application/octet-stream")
+    normalized.setdefault("chunk_count", 0)
+    normalized.setdefault("metadata", None)
     records.append(_to_record(normalized))
   return records
 
@@ -148,7 +173,7 @@ def get_document(document_id: str, tenant_id: str) -> DocumentRecord | None:
   try:
     result = (
       client.table("documents")
-      .select("id,tenant_id,filename,status,size_bytes,content_type,created_at")
+      .select("id,tenant_id,filename,status,size_bytes,content_type,chunk_count,metadata,created_at")
       .eq("id", document_id)
       .eq("tenant_id", tenant_id)
       .maybe_single()
@@ -160,7 +185,7 @@ def get_document(document_id: str, tenant_id: str) -> DocumentRecord | None:
       raise
     result = (
       client.table("documents")
-      .select("id,tenant_id,filename,status,created_at")
+      .select("id,tenant_id,filename,status,chunk_count,metadata,created_at")
       .eq("id", document_id)
       .eq("tenant_id", tenant_id)
       .maybe_single()
@@ -173,6 +198,8 @@ def get_document(document_id: str, tenant_id: str) -> DocumentRecord | None:
   normalized = cast(dict[str, object], data)
   normalized.setdefault("size_bytes", 0)
   normalized.setdefault("content_type", "application/octet-stream")
+  normalized.setdefault("chunk_count", 0)
+  normalized.setdefault("metadata", None)
   return _to_record(normalized)
 
 
@@ -182,6 +209,9 @@ def delete_document(document_id: str, tenant_id: str) -> bool:
     return False
 
   client = _get_client()
+  _ = client.table("chunks").delete().eq("document_id", document_id).execute()
+  _ = client.table("requirements").delete().eq("document_id", document_id).execute()
+  _ = client.table("compliance_reports").delete().eq("document_id", document_id).execute()
   _ = (
     client.table("documents")
     .delete()
@@ -208,6 +238,57 @@ def update_document_status(document_id: str, tenant_id: str, status: str) -> boo
   return True
 
 
+def update_document_nlp_result(
+  document_id: str,
+  tenant_id: str,
+  status: str,
+  chunk_count: int,
+  metadata: dict[str, object],
+) -> bool:
+  existing = get_document(document_id, tenant_id)
+  if existing is None:
+    return False
+
+  client = _get_client()
+  _ = (
+    client.table("documents")
+    .update(
+      {
+        "status": status,
+        "chunk_count": chunk_count,
+        "metadata": metadata,
+      }
+    )
+    .eq("id", document_id)
+    .eq("tenant_id", tenant_id)
+    .execute()
+  )
+  return True
+
+
+def replace_document_chunks(document_id: str, chunks: list[str], translated_chunks: list[str]) -> None:
+  client = _get_client()
+  _ = client.table("chunks").delete().eq("document_id", document_id).execute()
+
+  if not chunks:
+    return
+
+  rows: list[dict[str, object]] = []
+  for index, chunk in enumerate(chunks):
+    translated = translated_chunks[index] if index < len(translated_chunks) else None
+    rows.append(
+      {
+        "id": str(uuid4()),
+        "document_id": document_id,
+        "content": chunk,
+        "content_translated": translated,
+        "position": index,
+      }
+    )
+
+  _ = client.table("chunks").insert(rows).execute()
+
+
 def to_dict(document: DocumentRecord) -> dict[str, object]:
   return {
     "id": document.id,
@@ -216,5 +297,7 @@ def to_dict(document: DocumentRecord) -> dict[str, object]:
     "status": document.status,
     "size_bytes": document.size_bytes,
     "content_type": document.content_type,
+    "chunk_count": document.chunk_count,
+    "metadata": document.metadata,
     "created_at": document.created_at,
   }

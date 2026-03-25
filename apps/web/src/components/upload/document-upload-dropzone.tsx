@@ -6,6 +6,7 @@ import {
   deleteDocument,
   fetchDocuments,
   fetchMessagingStatus,
+  getApiWebSocketBaseUrl,
   getStatusProgress,
   uploadDocument,
   type MessagingStatus,
@@ -59,6 +60,8 @@ export function DocumentUploadDropzone() {
   const [isLoadingMessaging, setIsLoadingMessaging] = useState(true);
   const [messagingError, setMessagingError] = useState("");
   const isMessagingRequestInFlightRef = useRef(false);
+  const websocketRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
 
   async function loadDocuments(options?: { silent?: boolean }) {
@@ -158,7 +161,56 @@ export function DocumentUploadDropzone() {
 
     return () => {
       isMountedRef.current = false;
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      websocketRef.current?.close();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    const connect = () => {
+      if (isDisposed || !isMountedRef.current) {
+        return;
+      }
+
+      const ws = new WebSocket(`${getApiWebSocketBaseUrl()}/api/v1/live/documents`);
+      websocketRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as {
+            type?: string;
+            items?: UploadedDocument[];
+          };
+          if (payload.type === "documents.updated" && Array.isArray(payload.items) && isMountedRef.current) {
+            setDocuments(payload.items);
+            setIsLoadingDocuments(false);
+            setDocumentsError("");
+          }
+        } catch {
+        }
+      };
+
+      ws.onclose = () => {
+        if (isDisposed || !isMountedRef.current) {
+          return;
+        }
+        reconnectTimeoutRef.current = window.setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      websocketRef.current?.close();
     };
   }, []);
 
