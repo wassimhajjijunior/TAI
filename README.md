@@ -107,6 +107,7 @@ Current files:
 - `0004_track_a_documents_metadata.sql`
 - `0005_track_a_nlp_columns.sql`
 - `0006_track_a_embedding_dimension.sql`
+- `0007_track_a_requirements_fields.sql`
 
 Apply them to your local Supabase project before testing upload/persistence flows.
 
@@ -262,6 +263,26 @@ Worker status transitions:
 
 - `nlp_completed` → `embedding_processing` → `embedding_complete`
 - On errors: `embedding_failed`
+
+### Compliance Worker (Track A)
+
+Track A compliance worker consumes `embedding_complete`, extracts key entities from document text, evaluates weighted requirements against company profile, and persists compliance report.
+
+Run compliance worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.compliance.run_worker
+```
+
+Compliance persistence:
+
+- `requirements` table receives evaluated requirements (`met`, `weight`, `confidence`, `actual_value`)
+- `compliance_reports` stores `eligibility_score`, `recommendation`, and detailed `report` json
+
+Reliability notes:
+
+- Embedding and compliance workers use guarded status transitions to reduce race conditions on redelivered events
+- Compliance report stores event id and company profile snapshot for auditability
 
 ### Key upload constraints
 

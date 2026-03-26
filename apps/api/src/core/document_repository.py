@@ -32,6 +32,32 @@ class ChunkRecord(TypedDict):
   position: int
 
 
+class RequirementRecord(TypedDict):
+  id: str
+  document_id: str
+  requirement_text: str
+  requirement_code: str | None
+  category: str | None
+  weight: float | None
+  met: bool | None
+  confidence: float | None
+  actual_value: str | None
+
+
+class CompanyProfileRecord(TypedDict):
+  id: str
+  tenant_id: str
+  profile: dict[str, object]
+
+
+class ComplianceReportRecord(TypedDict):
+  id: str
+  document_id: str
+  eligibility_score: float | None
+  recommendation: str | None
+  report: dict[str, object] | None
+
+
 @dataclass(frozen=True)
 class DocumentRecord:
   id: str
@@ -246,6 +272,20 @@ def update_document_status(document_id: str, tenant_id: str, status: str) -> boo
   return True
 
 
+def update_document_status_if_current(document_id: str, tenant_id: str, expected_status: str, next_status: str) -> bool:
+  client = _get_client()
+  result = (
+    client.table("documents")
+    .update({"status": next_status})
+    .eq("id", document_id)
+    .eq("tenant_id", tenant_id)
+    .eq("status", expected_status)
+    .execute()
+  )
+  data = getattr(result, "data", None)
+  return bool(data)
+
+
 def update_document_nlp_result(
   document_id: str,
   tenant_id: str,
@@ -363,4 +403,185 @@ def to_dict(document: DocumentRecord) -> dict[str, object]:
     "chunk_count": document.chunk_count,
     "metadata": document.metadata,
     "created_at": document.created_at,
+  }
+
+
+def _to_float(value: object) -> float | None:
+  if isinstance(value, (int, float)):
+    return float(value)
+  if isinstance(value, str):
+    try:
+      return float(value)
+    except Exception:
+      return None
+  return None
+
+
+def _to_bool(value: object) -> bool | None:
+  if isinstance(value, bool):
+    return value
+  if isinstance(value, str):
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes"}:
+      return True
+    if normalized in {"false", "0", "no"}:
+      return False
+  return None
+
+
+def list_requirements(document_id: str) -> list[RequirementRecord]:
+  client = _get_client()
+  try:
+    result = (
+      client.table("requirements")
+      .select("id,document_id,requirement_text,requirement_code,category,weight,met,confidence,actual_value")
+      .eq("document_id", document_id)
+      .execute()
+    )
+    data = getattr(result, "data", [])
+    records: list[RequirementRecord] = []
+    for item in data:
+      normalized = cast(dict[str, object], item)
+      records.append(
+        {
+          "id": str(normalized.get("id", "")),
+          "document_id": str(normalized.get("document_id", document_id)),
+          "requirement_text": str(normalized.get("requirement_text", "")),
+          "requirement_code": str(normalized.get("requirement_code")) if normalized.get("requirement_code") is not None else None,
+          "category": str(normalized.get("category")) if normalized.get("category") is not None else None,
+          "weight": _to_float(normalized.get("weight")),
+          "met": _to_bool(normalized.get("met")),
+          "confidence": _to_float(normalized.get("confidence")),
+          "actual_value": str(normalized.get("actual_value")) if normalized.get("actual_value") is not None else None,
+        }
+      )
+    return records
+  except Exception:
+    result = (
+      client.table("requirements")
+      .select("id,document_id,requirement_text")
+      .eq("document_id", document_id)
+      .execute()
+    )
+    data = getattr(result, "data", [])
+    fallback_records: list[RequirementRecord] = []
+    for item in data:
+      normalized = cast(dict[str, object], item)
+      fallback_records.append(
+        {
+          "id": str(normalized.get("id", "")),
+          "document_id": str(normalized.get("document_id", document_id)),
+          "requirement_text": str(normalized.get("requirement_text", "")),
+          "requirement_code": None,
+          "category": None,
+          "weight": None,
+          "met": None,
+          "confidence": None,
+          "actual_value": None,
+        }
+      )
+    return fallback_records
+
+
+def replace_requirements(document_id: str, requirements: list[dict[str, object]]) -> None:
+  client = _get_client()
+  _ = client.table("requirements").delete().eq("document_id", document_id).execute()
+  if not requirements:
+    return
+
+  rows: list[dict[str, object]] = []
+  for requirement in requirements:
+    rows.append(
+      {
+        "id": str(uuid4()),
+        "document_id": document_id,
+        "requirement_text": str(requirement.get("requirement_text", "")),
+        "requirement_code": requirement.get("requirement_code"),
+        "category": requirement.get("category"),
+        "weight": requirement.get("weight"),
+        "met": requirement.get("met"),
+        "confidence": requirement.get("confidence"),
+        "actual_value": requirement.get("actual_value"),
+      }
+    )
+  _ = client.table("requirements").insert(rows).execute()
+
+
+def get_company_profile(tenant_id: str) -> CompanyProfileRecord | None:
+  client = _get_client()
+  result = (
+    client.table("company_profiles")
+    .select("id,tenant_id,profile")
+    .eq("tenant_id", tenant_id)
+    .maybe_single()
+    .execute()
+  )
+  data = getattr(result, "data", None)
+  if not data:
+    return None
+  normalized = cast(dict[str, object], data)
+  profile = normalized.get("profile")
+  return {
+    "id": str(normalized.get("id", "")),
+    "tenant_id": str(normalized.get("tenant_id", tenant_id)),
+    "profile": cast(dict[str, object], profile if isinstance(profile, dict) else {}),
+  }
+
+
+def upsert_company_profile(tenant_id: str, profile: dict[str, object]) -> CompanyProfileRecord:
+  ensure_tenant_exists(tenant_id)
+  row = {
+    "id": str(uuid4()),
+    "tenant_id": tenant_id,
+    "profile": profile,
+  }
+  client = _get_client()
+  _ = client.table("company_profiles").upsert(row, on_conflict="tenant_id").execute()
+  stored = get_company_profile(tenant_id)
+  if stored is None:
+    raise RuntimeError("Failed to upsert company profile")
+  return stored
+
+
+def upsert_compliance_report(
+  document_id: str,
+  eligibility_score: float,
+  recommendation: str,
+  report: dict[str, object],
+) -> ComplianceReportRecord:
+  client = _get_client()
+  row = {
+    "id": str(uuid4()),
+    "document_id": document_id,
+    "eligibility_score": eligibility_score,
+    "recommendation": recommendation,
+    "report": report,
+  }
+  _ = client.table("compliance_reports").upsert(row, on_conflict="document_id").execute()
+  stored = get_compliance_report(document_id)
+  if stored is None:
+    raise RuntimeError("Failed to persist compliance report")
+  return stored
+
+
+def get_compliance_report(document_id: str) -> ComplianceReportRecord | None:
+  client = _get_client()
+  result = (
+    client.table("compliance_reports")
+    .select("id,document_id,eligibility_score,recommendation,report")
+    .eq("document_id", document_id)
+    .maybe_single()
+    .execute()
+  )
+  data = getattr(result, "data", None)
+  if not data:
+    return None
+  normalized = cast(dict[str, object], data)
+  report_obj = normalized.get("report")
+  return {
+    "id": str(normalized.get("id", "")),
+    "document_id": str(normalized.get("document_id", document_id)),
+    "eligibility_score": _to_float(normalized.get("eligibility_score")),
+    "recommendation": str(normalized.get("recommendation")) if normalized.get("recommendation") is not None else None,
+    "report": cast(dict[str, object] | None, report_obj if isinstance(report_obj, dict) else None),
   }

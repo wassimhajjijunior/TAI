@@ -107,10 +107,20 @@ def process_nlp_completed(event_payload: dict[str, Any]) -> None:
     )
     return
 
-  if existing_document.status == "embedding_complete":
+  if existing_document.status in {"embedding_complete", "compliance_processing", "compliance_completed"}:
     return
 
-  _ = document_repository.update_document_status(document_id, tenant_id, "embedding_processing")
+  if not document_repository.update_document_status_if_current(
+    document_id,
+    tenant_id,
+    "nlp_completed",
+    "embedding_processing",
+  ):
+    latest = document_repository.get_document(document_id, tenant_id)
+    if latest is None or latest.status in {"embedding_complete", "compliance_processing", "compliance_completed"}:
+      return
+    if latest.status != "embedding_processing":
+      _ = document_repository.update_document_status(document_id, tenant_id, "embedding_processing")
 
   chunks = document_repository.list_document_chunks(document_id)
   if not chunks:
