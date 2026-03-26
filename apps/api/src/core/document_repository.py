@@ -24,6 +24,14 @@ class TenantRow(TypedDict):
   name: str
 
 
+class ChunkRecord(TypedDict):
+  id: str
+  document_id: str
+  content: str
+  content_translated: str | None
+  position: int
+
+
 @dataclass(frozen=True)
 class DocumentRecord:
   id: str
@@ -287,6 +295,61 @@ def replace_document_chunks(document_id: str, chunks: list[str], translated_chun
     )
 
   _ = client.table("chunks").insert(rows).execute()
+
+
+def list_document_chunks(document_id: str) -> list[ChunkRecord]:
+  client = _get_client()
+  result = (
+    client.table("chunks")
+    .select("id,document_id,content,content_translated,position")
+    .eq("document_id", document_id)
+    .order("position")
+    .execute()
+  )
+
+  data = getattr(result, "data", [])
+  records: list[ChunkRecord] = []
+  for item in data:
+    normalized = cast(dict[str, object], item)
+    position_value = normalized.get("position", 0)
+    if isinstance(position_value, int):
+      position = position_value
+    elif isinstance(position_value, str) and position_value.isdigit():
+      position = int(position_value)
+    else:
+      position = 0
+
+    translated = normalized.get("content_translated")
+    records.append(
+      {
+        "id": str(normalized.get("id", "")),
+        "document_id": str(normalized.get("document_id", document_id)),
+        "content": str(normalized.get("content", "")),
+        "content_translated": str(translated) if isinstance(translated, str) else None,
+        "position": position,
+      }
+    )
+
+  return records
+
+
+def _vector_to_literal(vector: list[float]) -> str:
+  return "[" + ",".join(f"{value:.10f}" for value in vector) + "]"
+
+
+def save_chunk_embeddings(document_id: str, chunk_vectors: list[tuple[str, list[float]]]) -> None:
+  if not chunk_vectors:
+    return
+
+  client = _get_client()
+  for chunk_id, vector in chunk_vectors:
+    _ = (
+      client.table("chunks")
+      .update({"embedding": _vector_to_literal(vector)})
+      .eq("id", chunk_id)
+      .eq("document_id", document_id)
+      .execute()
+    )
 
 
 def to_dict(document: DocumentRecord) -> dict[str, object]:

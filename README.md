@@ -105,6 +105,8 @@ Current files:
 - `0002_track_a.sql`
 - `0003_track_b.sql`
 - `0004_track_a_documents_metadata.sql`
+- `0005_track_a_nlp_columns.sql`
+- `0006_track_a_embedding_dimension.sql`
 
 Apply them to your local Supabase project before testing upload/persistence flows.
 
@@ -233,6 +235,33 @@ How OCR source is resolved:
 Pipeline events used now:
 
 `document_uploaded` → `ocr_complete` → `nlp_completed` → `embedding_complete`
+
+### Embedding Worker (Track A)
+
+Track A embedding worker consumes `nlp_completed`, generates vectors via Hugging Face BGE-M3, writes embeddings to pgvector column in `chunks`, and publishes `embedding_complete`.
+
+Run embedding worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.embedding.run_worker
+```
+
+Embedding defaults:
+
+- Model: `BAAI/bge-m3`
+- Expected vector dimension: `1024`
+- Batch size: `32`
+
+Required/optional env vars in `apps/api/.env`:
+
+- `HF_TOKEN` (required)
+- `HF_EMBEDDING_MODEL` (optional override, default `BAAI/bge-m3`)
+- `HF_EMBEDDING_API_URL` (optional explicit endpoint override)
+
+Worker status transitions:
+
+- `nlp_completed` → `embedding_processing` → `embedding_complete`
+- On errors: `embedding_failed`
 
 ### Key upload constraints
 
