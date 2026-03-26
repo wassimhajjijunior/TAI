@@ -1,3 +1,5 @@
+import json
+import os
 import re
 import unicodedata
 from datetime import datetime
@@ -12,6 +14,8 @@ from ...core.rabbitmq import consume, publish_event
 DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 MAX_CHUNK_TOKENS = 300
 CHUNK_OVERLAP_TOKENS = 50
+HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions"
+HF_DEFAULT_MODEL = "Qwen/Qwen2.5-14B-Instruct:featherless-ai"
 
 FRENCH_MONTHS = {
   "janvier": 1,
@@ -221,7 +225,7 @@ def _normalize_amount_token(amount_token: str, multiplier_token: str | None) -> 
     return normalized
 
 
-def _extract_budget(text: str) -> str | None:
+def _extract_budget_candidates(text: str) -> list[str]:
   normalized = _normalize_for_matching(text)
   amount_pattern = re.compile(
     r"(?P<amount>\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*"
@@ -232,7 +236,7 @@ def _extract_budget(text: str) -> str | None:
 
   candidates: list[tuple[int, str]] = []
   for match in amount_pattern.finditer(normalized):
-    start = max(0, match.start() - 80)
+    start = max(0, match.start() - 100)
     context_window = normalized[start:match.start()]
     context_score = 2 if any(keyword in context_window for keyword in BUDGET_KEYWORDS) else 0
     amount_value = _normalize_amount_token(match.group("amount"), match.group("multiplier"))
@@ -240,20 +244,26 @@ def _extract_budget(text: str) -> str | None:
     formatted = f"{amount_value} {currency}"
     candidates.append((context_score, formatted))
 
-  if candidates:
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
-
   context_amount_pattern = re.compile(
-    r"(?:budget|montant|valeur|prix\s+estime|prix\s+estimé|enveloppe)\D{0,30}"
+    r"(?:budget|montant|valeur|prix\s+estime|prix\s+estimé|enveloppe)\D{0,35}"
     r"(\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)",
     re.IGNORECASE,
   )
   context_match = context_amount_pattern.search(normalized)
   if context_match:
-    return _normalize_amount_token(context_match.group(1), None)
+    candidates.append((1, _normalize_amount_token(context_match.group(1), None)))
 
-  return None
+  if not candidates:
+    return []
+
+  candidates.sort(key=lambda item: item[0], reverse=True)
+  seen: set[str] = set()
+  ordered: list[str] = []
+  for _, value in candidates:
+    if value not in seen:
+      seen.add(value)
+      ordered.append(value)
+  return ordered[:5]
 
 
 def _parse_date_to_iso(raw_date: str) -> str | None:
@@ -292,7 +302,7 @@ def _parse_date_to_iso(raw_date: str) -> str | None:
   return None
 
 
-def _extract_deadline(text: str) -> str | None:
+def _extract_deadline_candidates(text: str) -> list[str]:
   normalized = _normalize_for_matching(text)
   date_pattern = re.compile(
     r"(\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}(?:er)?\s+[a-zA-Zéèêëàâîïôöùûüç]+\s+\d{4})",
@@ -301,26 +311,35 @@ def _extract_deadline(text: str) -> str | None:
 
   candidates: list[tuple[int, str]] = []
   for match in date_pattern.finditer(normalized):
-    start = max(0, match.start() - 100)
+    start = max(0, match.start() - 120)
     context_window = normalized[start:match.start()]
     score = 3 if any(keyword in context_window for keyword in DEADLINE_KEYWORDS) else 0
-    iso_date = _parse_date_to_iso(match.group(1))
-    if iso_date:
-      candidates.append((score, iso_date))
+    parsed = _parse_date_to_iso(match.group(1))
+    if parsed:
+      candidates.append((score, parsed))
+
+  keyword_date_pattern = re.compile(
+    r"(?:date\s+limite|au\s+plus\s+tard|avant\s+le|soumission\s+avant|remise\s+des\s+offres)\D{0,40}"
+    r"(\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}(?:er)?\s+[a-zA-Zéèêëàâîïôöùûüç]+\s+\d{4})",
+    re.IGNORECASE,
+  )
+  keyword_match = keyword_date_pattern.search(normalized)
+  if keyword_match:
+    parsed = _parse_date_to_iso(keyword_match.group(1))
+    if parsed:
+      candidates.append((4, parsed))
 
   if not candidates:
-    keyword_date_pattern = re.compile(
-      r"(?:date\s+limite|au\s+plus\s+tard|avant\s+le|soumission\s+avant|remise\s+des\s+offres)\D{0,40}"
-      r"(\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}(?:er)?\s+[a-zA-Zéèêëàâîïôöùûüç]+\s+\d{4})",
-      re.IGNORECASE,
-    )
-    keyword_match = keyword_date_pattern.search(normalized)
-    if keyword_match:
-      return _parse_date_to_iso(keyword_match.group(1))
-    return None
+    return []
 
   candidates.sort(key=lambda item: item[0], reverse=True)
-  return candidates[0][1]
+  seen: set[str] = set()
+  ordered: list[str] = []
+  for _, value in candidates:
+    if value not in seen:
+      seen.add(value)
+      ordered.append(value)
+  return ordered[:5]
 
 
 def _classify_category(text: str) -> str:
@@ -345,17 +364,157 @@ def _classify_category(text: str) -> str:
   return max(scored.items(), key=lambda item: item[1])[0]
 
 
+def _extract_json_object(raw_text: str) -> dict[str, object] | None:
+  stripped = raw_text.strip()
+  if stripped.startswith("```"):
+    stripped = stripped.replace("```json", "").replace("```", "").strip()
+
+  try:
+    parsed = json.loads(stripped)
+    if isinstance(parsed, dict):
+      return parsed
+    return None
+  except Exception:
+    pass
+
+  match = re.search(r"\{.*\}", stripped, re.DOTALL)
+  if not match:
+    return None
+
+  try:
+    parsed = json.loads(match.group(0))
+    if isinstance(parsed, dict):
+      return parsed
+  except Exception:
+    return None
+  return None
+
+
+def _refine_metadata_with_hf(
+  cleaned_text: str,
+  base_metadata: dict[str, object],
+  deadline_candidates: list[str],
+  budget_candidates: list[str],
+) -> dict[str, object]:
+  hf_token = os.getenv("HF_TOKEN", "").strip()
+  if not hf_token:
+    return base_metadata
+
+  requests_module = import_module("requests")
+  post = getattr(requests_module, "post")
+  model_name = os.getenv("HF_METADATA_MODEL", HF_DEFAULT_MODEL).strip() or HF_DEFAULT_MODEL
+
+  prompt_payload = {
+    "base_metadata": base_metadata,
+    "deadline_candidates": deadline_candidates,
+    "budget_candidates": budget_candidates,
+    "rules": {
+      "deadline_format": "YYYY-MM-DD or null",
+      "country": "lowercase country code-like label or null",
+      "category": "one of construction,it_services,consulting,logistics,health,education,general",
+      "budget": "normalized string with currency when available or null",
+    },
+    "text_excerpt": cleaned_text[:9000],
+  }
+
+  messages = [
+    {
+      "role": "system",
+      "content": (
+        "You extract tender metadata from French procurement text. "
+        "Return only strict JSON object with keys: country, budget, deadline, category. "
+        "Do not add extra text."
+      ),
+    },
+    {
+      "role": "user",
+      "content": json.dumps(prompt_payload, ensure_ascii=False),
+    },
+  ]
+
+  try:
+    response = post(
+      HF_ROUTER_URL,
+      headers={"Authorization": f"Bearer {hf_token}"},
+      json={
+        "model": model_name,
+        "messages": messages,
+        "temperature": 0.0,
+        "max_tokens": 220,
+      },
+      timeout=20,
+    )
+    if not bool(getattr(response, "ok", False)):
+      return base_metadata
+
+    response_payload = response.json()
+    choices = response_payload.get("choices", []) if isinstance(response_payload, dict) else []
+    if not choices:
+      return base_metadata
+
+    first_choice = choices[0]
+    message = first_choice.get("message", {}) if isinstance(first_choice, dict) else {}
+    content = str(message.get("content", "")) if isinstance(message, dict) else ""
+    parsed = _extract_json_object(content)
+    if not parsed:
+      return base_metadata
+
+    merged = dict(base_metadata)
+
+    parsed_deadline = parsed.get("deadline")
+    if isinstance(parsed_deadline, str) and parsed_deadline.strip():
+      normalized_deadline = _parse_date_to_iso(parsed_deadline.strip()) or parsed_deadline.strip()
+      merged["deadline"] = normalized_deadline
+
+    parsed_budget = parsed.get("budget")
+    if isinstance(parsed_budget, str) and parsed_budget.strip():
+      merged["budget"] = parsed_budget.strip()
+
+    parsed_country = parsed.get("country")
+    if isinstance(parsed_country, str) and parsed_country.strip():
+      merged["country"] = _normalize_for_matching(parsed_country.strip()).replace(" ", "_")
+
+    parsed_category = parsed.get("category")
+    if isinstance(parsed_category, str) and parsed_category.strip():
+      category = _normalize_for_matching(parsed_category.strip())
+      allowed_categories = {
+        "construction",
+        "it_services",
+        "consulting",
+        "logistics",
+        "health",
+        "education",
+        "general",
+      }
+      merged["category"] = category if category in allowed_categories else str(base_metadata.get("category", "general"))
+
+    merged["metadata_source"] = "rules_plus_hf"
+    return merged
+  except Exception:
+    return base_metadata
+
+
 def _build_metadata(cleaned_text: str, language: str, confidence: float) -> dict[str, object]:
-  return {
+  deadline_candidates = _extract_deadline_candidates(cleaned_text)
+  budget_candidates = _extract_budget_candidates(cleaned_text)
+
+  base_metadata: dict[str, object] = {
     "language": {
       "code": language,
       "confidence": round(confidence, 4),
     },
     "country": _extract_country(cleaned_text),
-    "budget": _extract_budget(cleaned_text),
-    "deadline": _extract_deadline(cleaned_text),
+    "budget": budget_candidates[0] if budget_candidates else None,
+    "deadline": deadline_candidates[0] if deadline_candidates else None,
     "category": _classify_category(cleaned_text),
+    "candidates": {
+      "deadline": deadline_candidates,
+      "budget": budget_candidates,
+    },
+    "metadata_source": "rules",
   }
+
+  return _refine_metadata_with_hf(cleaned_text, base_metadata, deadline_candidates, budget_candidates)
 
 
 def process_ocr_complete(event_payload: dict[str, Any]) -> None:

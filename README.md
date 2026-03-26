@@ -193,6 +193,8 @@ Required env vars in `apps/api/.env`:
 
 - `RABBITMQ_URL`
 - `MISTRAL_API_KEY`
+- `HF_TOKEN` (optional but recommended for metadata adjudication)
+- `HF_METADATA_MODEL` (optional override; default `Qwen/Qwen2.5-14B-Instruct:featherless-ai`)
 
 ### NLP Worker (Track A)
 
@@ -209,11 +211,16 @@ NLP stack used in worker:
 - `langdetect` for language detection
 - `spacy` (French blank pipeline + sentencizer) for sentence boundary chunking
 - `deep-translator` (`GoogleTranslator`) for FR→EN chunk translation
+- Hugging Face Router chat completion for metadata adjudication (rules + LLM hybrid)
 
 Notes about API keys/services:
 
 - `langdetect` and `spacy` (blank pipeline mode) do not require external API keys
 - `deep-translator` GoogleTranslator uses a free web translation backend (no project API key configured in current implementation)
+- Metadata extraction runs in hybrid mode:
+  - rule-based candidates are generated first
+  - if `HF_TOKEN` is configured, Hugging Face model selects/refines best metadata by context
+  - if HF request fails, worker falls back to rule-only metadata (no pipeline break)
 - For production stability, you may later switch translation to a paid API-backed provider
 
 How OCR source is resolved:
