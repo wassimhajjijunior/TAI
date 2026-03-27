@@ -134,9 +134,10 @@ def get_document_requirements(document_id: str) -> dict[str, object]:
   stored = document_repository.get_document(document_id, DEFAULT_TENANT_ID)
   if stored is None:
     raise HTTPException(status_code=404, detail="Document not found")
+  requirements = document_repository.list_requirements(document_id)
   return {
     "id": document_id,
-    "requirements": [],
+    "requirements": requirements,
   }
 
 

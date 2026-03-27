@@ -105,6 +105,9 @@ Current files:
 - `0002_track_a.sql`
 - `0003_track_b.sql`
 - `0004_track_a_documents_metadata.sql`
+- `0005_track_a_nlp_columns.sql`
+- `0006_track_a_embedding_dimension.sql`
+- `0007_track_a_requirements_fields.sql`
 
 Apply them to your local Supabase project before testing upload/persistence flows.
 
@@ -193,6 +196,8 @@ Required env vars in `apps/api/.env`:
 
 - `RABBITMQ_URL`
 - `MISTRAL_API_KEY`
+- `HF_TOKEN` (optional but recommended for metadata adjudication)
+- `HF_METADATA_MODEL` (optional override; default `Qwen/Qwen2.5-14B-Instruct:featherless-ai`)
 
 ### NLP Worker (Track A)
 
@@ -209,11 +214,16 @@ NLP stack used in worker:
 - `langdetect` for language detection
 - `spacy` (French blank pipeline + sentencizer) for sentence boundary chunking
 - `deep-translator` (`GoogleTranslator`) for FR→EN chunk translation
+- Hugging Face Router chat completion for metadata adjudication (rules + LLM hybrid)
 
 Notes about API keys/services:
 
 - `langdetect` and `spacy` (blank pipeline mode) do not require external API keys
 - `deep-translator` GoogleTranslator uses a free web translation backend (no project API key configured in current implementation)
+- Metadata extraction runs in hybrid mode:
+  - rule-based candidates are generated first
+  - if `HF_TOKEN` is configured, Hugging Face model selects/refines best metadata by context
+  - if HF request fails, worker falls back to rule-only metadata (no pipeline break)
 - For production stability, you may later switch translation to a paid API-backed provider
 
 How OCR source is resolved:
@@ -226,6 +236,53 @@ How OCR source is resolved:
 Pipeline events used now:
 
 `document_uploaded` → `ocr_complete` → `nlp_completed` → `embedding_complete`
+
+### Embedding Worker (Track A)
+
+Track A embedding worker consumes `nlp_completed`, generates vectors via Hugging Face BGE-M3, writes embeddings to pgvector column in `chunks`, and publishes `embedding_complete`.
+
+Run embedding worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.embedding.run_worker
+```
+
+Embedding defaults:
+
+- Model: `BAAI/bge-m3`
+- Expected vector dimension: `1024`
+- Batch size: `32`
+
+Required/optional env vars in `apps/api/.env`:
+
+- `HF_TOKEN` (required)
+- `HF_EMBEDDING_MODEL` (optional override, default `BAAI/bge-m3`)
+- `HF_EMBEDDING_API_URL` (optional explicit endpoint override)
+
+Worker status transitions:
+
+- `nlp_completed` → `embedding_processing` → `embedding_complete`
+- On errors: `embedding_failed`
+
+### Compliance Worker (Track A)
+
+Track A compliance worker consumes `embedding_complete`, extracts key entities from document text, evaluates weighted requirements against company profile, and persists compliance report.
+
+Run compliance worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.compliance.run_worker
+```
+
+Compliance persistence:
+
+- `requirements` table receives evaluated requirements (`met`, `weight`, `confidence`, `actual_value`)
+- `compliance_reports` stores `eligibility_score`, `recommendation`, and detailed `report` json
+
+Reliability notes:
+
+- Embedding and compliance workers use guarded status transitions to reduce race conditions on redelivered events
+- Compliance report stores event id and company profile snapshot for auditability
 
 ### Key upload constraints
 
