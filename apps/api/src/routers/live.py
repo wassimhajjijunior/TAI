@@ -1,11 +1,13 @@
 import asyncio
 import json
+import logging
 from typing import Any
 
 from ..core import document_repository
 
 
 DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+logger = logging.getLogger(__name__)
 
 
 def serialize_documents() -> list[dict[str, object]]:
@@ -37,8 +39,17 @@ async def websocket_documents(websocket: Any) -> None:
       if serialized != previous_payload:
         await websocket.send_json(message)
         previous_payload = serialized
-  except Exception:
-    await websocket.close()
+  except Exception as error:
+    error_name = type(error).__name__
+    if error_name in {"WebSocketDisconnect", "ClientDisconnected"}:
+      return
+
+    error_text = str(error)
+    if "ConnectionClosed" in error_name or "close message has been sent" in error_text:
+      return
+
+    logger.debug("Live websocket ended with non-fatal error: %s", error)
+    return
 
 
 def register_websocket_routes(app: Any) -> None:

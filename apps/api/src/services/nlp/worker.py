@@ -317,6 +317,18 @@ def _normalize_amount(amount_token: str) -> str:
 
 def _normalize_currency_unit(currency_token: str) -> str:
   normalized = _normalize_for_matching(currency_token)
+  normalized = normalized.replace("d.t", "dt")
+  compact = re.sub(r"[^a-z0-9]+", "", normalized)
+
+  if compact in {"dt", "tnd"}:
+    return "DT"
+  if compact == "mdt":
+    return "DT"
+  if "dinar" in normalized and "tunis" in normalized:
+    return "DT"
+  if normalized in {"dinar", "dinars"}:
+    return "DT"
+
   currency_map = {
     "€": "EUR",
     "eur": "EUR",
@@ -335,22 +347,94 @@ def _normalize_currency_unit(currency_token: str) -> str:
     "cad": "CAD",
     "chf": "CHF",
     "gbp": "GBP",
+    "dirham": "MAD",
+    "dirhams": "MAD",
   }
   return currency_map.get(normalized, currency_token.upper())
 
 
-def _normalize_budget_value(value: str) -> str:
-  normalized = _normalize_for_matching(value)
-  pattern = re.compile(
-    r"(?P<amount>\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*"
-    r"(?P<cur>€|eur|euro|euros|usd|\$|mad|dzd|xof|xaf|tnd|dt|cad|chf|gbp|da|dh)",
+def _parse_budget_value(raw_value: str) -> tuple[str, str] | None:
+  normalized = _normalize_for_matching(raw_value)
+  normalized = normalized.replace("d.t", "dt")
+
+  tunisia_keyword_pattern = re.compile(
+    r"(?:dinar(?:s)?\s+tunis(?:ien|iens|ienne|iennes)|dinars?|dt|tnd|mdt)",
     re.IGNORECASE,
   )
-  match = pattern.search(normalized)
-  if not match:
+  tunisian_keyword_match = tunisia_keyword_pattern.search(normalized)
+  if tunisian_keyword_match:
+    before = normalized[:tunisian_keyword_match.start()]
+    after = normalized[tunisian_keyword_match.end():]
+    amount_pattern = re.compile(r"\d{1,3}(?:[\s.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?")
+    before_matches = list(amount_pattern.finditer(before))
+    amount_match = amount_pattern.search(after) or (before_matches[-1] if before_matches else None)
+    if amount_match:
+      amount_raw = _normalize_amount(amount_match.group(0))
+      factor = 1
+      if re.sub(r"[^a-z0-9]+", "", tunisian_keyword_match.group(0).lower()) == "mdt":
+        factor = 1_000_000
+      try:
+        numeric = float(amount_raw) * factor
+        amount_normalized = str(int(numeric)) if numeric.is_integer() else f"{numeric:.2f}"
+      except Exception:
+        amount_normalized = amount_raw
+      return amount_normalized, "DT"
+
+  amount_token = r"(?P<amount>\d+(?:[.,]\d{1,2})?|\d{1,3}(?:[\s.,]\d{3})+(?:[.,]\d{1,2})?)"
+  multiplier_token = r"(?P<mult>k|m|mn|mille|million|millions|md|milliard|milliards)?"
+  currency_token = (
+    r"(?P<cur>€|eur|euro|euros|usd|\$|mad|dzd|xof|xaf|tnd|dt|cad|chf|gbp|"
+    r"da|dh|dirham|dirhams|dinar|dinars|dinar[s]?\s+tunis(?:ien|iens)?|"
+    r"d\s*\.?\s*t|mdt)"
+  )
+
+  patterns = [
+    re.compile(rf"{amount_token}\s*{multiplier_token}\s*(?:de\s+)?{currency_token}", re.IGNORECASE),
+    re.compile(rf"{currency_token}\s*{amount_token}\s*{multiplier_token}", re.IGNORECASE),
+    re.compile(
+      rf"(?P<prefix>budget|montant|enveloppe|prix|valeur|co[uû]t)[^\d\n]{{0,30}}"
+      rf"(?P<cur>dinar[s]?\s+tunis(?:ien|iens)?|dinar|dinars|dt|tnd|mdt)\s*[:\-]?\s*"
+      rf"(?P<amount>\d{{1,3}}(?:[\s.,]\d{{3}})+(?:[.,]\d{{1,2}})?|\d+(?:[.,]\d{{1,2}})?)"
+      rf"\s*(?P<mult>k|m|mn|mille|million|millions|md|milliard|milliards)?",
+      re.IGNORECASE,
+    ),
+  ]
+
+  for pattern in patterns:
+    match = pattern.search(normalized)
+    if not match:
+      continue
+
+    amount = _normalize_amount(match.group("amount"))
+    multiplier = (match.group("mult") or "").lower()
+    factor = 1
+    if multiplier in {"k", "mille"}:
+      factor = 1000
+    elif multiplier in {"m", "mn", "million", "millions"}:
+      factor = 1_000_000
+    elif multiplier in {"md", "milliard", "milliards"}:
+      factor = 1_000_000_000
+
+    try:
+      numeric = float(amount) * factor
+      currency_token_raw = str(match.group("cur"))
+      if re.sub(r"[^a-z0-9]+", "", _normalize_for_matching(currency_token_raw)) == "mdt" and factor == 1:
+        numeric *= 1_000_000
+      amount_normalized = str(int(numeric)) if numeric.is_integer() else f"{numeric:.2f}"
+    except Exception:
+      amount_normalized = amount
+
+    currency = _normalize_currency_unit(match.group("cur"))
+    return amount_normalized, currency
+
+  return None
+
+
+def _normalize_budget_value(value: str) -> str:
+  parsed = _parse_budget_value(value)
+  if parsed is None:
     return ""
-  amount = _normalize_amount(match.group("amount"))
-  currency = _normalize_currency_unit(match.group("cur"))
+  amount, currency = parsed
   return f"{amount} {currency}"
 
 
@@ -364,44 +448,64 @@ def _has_budget_unit(value: str) -> bool:
 
 
 def _extract_budget_candidates(chunks: list[TextChunk]) -> list[Candidate]:
-  pattern = re.compile(
-    r"(?P<amount>\d{1,3}(?:[\s.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*"
-    r"(?P<mult>k|m|mn|mille|million|millions|md|milliard|milliards)?\s*"
-    r"(?P<cur>€|eur|euro|euros|usd|\$|mad|dzd|xof|xaf|tnd|dt|cad|chf|gbp|da|dh)",
-    re.IGNORECASE,
+  amount_token = r"(?P<amount>\d+(?:[.,]\d{1,2})?|\d{1,3}(?:[\s.,]\d{3})+(?:[.,]\d{1,2})?)"
+  multiplier_token = r"(?P<mult>k|m|mn|mille|million|millions|md|milliard|milliards)?"
+  currency_token = (
+    r"(?P<cur>€|eur|euro|euros|usd|\$|mad|dzd|xof|xaf|tnd|dt|cad|chf|gbp|"
+    r"da|dh|dirham|dirhams|dinar|dinars|dinar[s]?\s+tunis(?:ien|iens)?|"
+    r"d\s*\.?\s*t|mdt)"
   )
+  patterns = [
+    re.compile(rf"{amount_token}\s*{multiplier_token}\s*(?:de\s+)?{currency_token}", re.IGNORECASE),
+    re.compile(rf"{currency_token}\s*{amount_token}\s*{multiplier_token}", re.IGNORECASE),
+  ]
+
   candidates: list[Candidate] = []
-  for chunk in chunks:
-    normalized = _normalize_for_matching(chunk.text)
-    for match in pattern.finditer(normalized):
-      amount = _normalize_amount(match.group("amount"))
-      multiplier = (match.group("mult") or "").lower()
-      factor = 1
-      if multiplier in {"k", "mille"}:
-        factor = 1000
-      elif multiplier in {"m", "mn", "million", "millions"}:
-        factor = 1_000_000
-      elif multiplier in {"md", "milliard", "milliards"}:
-        factor = 1_000_000_000
-      try:
-        numeric = float(amount) * factor
-        amount_normalized = str(int(numeric)) if numeric.is_integer() else f"{numeric:.2f}"
-      except Exception:
-        amount_normalized = amount
-      value = f"{amount_normalized} {_normalize_currency_unit(match.group('cur'))}"
-      left = normalized[max(0, match.start() - 100):match.start()]
-      score = 0.62
-      if any(keyword in left for keyword in TASK_KEYWORDS["budget"]):
-        score = 0.9
-      candidates.append(
-        Candidate(
-          value=value,
-          score=score,
-          evidence_text=chunk.text[:500],
-          source_chunk_index=chunk.index,
-          metadata_source="rules",
+  contexts: list[tuple[int, str]] = []
+  for index, chunk in enumerate(chunks):
+    contexts.append((chunk.index, chunk.text))
+    if index + 1 < len(chunks):
+      contexts.append((chunk.index, f"{chunk.text} {chunks[index + 1].text}"))
+
+  for source_chunk_index, context_text in contexts:
+    normalized = _normalize_for_matching(context_text)
+    matched_in_context = False
+    for pattern in patterns:
+      for match in pattern.finditer(normalized):
+        parsed = _parse_budget_value(match.group(0))
+        if parsed is None:
+          continue
+        amount_normalized, currency = parsed
+        value = f"{amount_normalized} {currency}"
+        left = normalized[max(0, match.start() - 120):match.start()]
+        score = 0.62
+        if any(keyword in left for keyword in TASK_KEYWORDS["budget"]):
+          score = 0.9
+        candidates.append(
+          Candidate(
+            value=value,
+            score=score,
+            evidence_text=context_text[:500],
+            source_chunk_index=source_chunk_index,
+            metadata_source="rules",
+          )
         )
-      )
+        matched_in_context = True
+
+    if not matched_in_context:
+      parsed_context = _parse_budget_value(normalized)
+      if parsed_context is not None:
+        amount_normalized, currency = parsed_context
+        context_score = 0.9 if any(keyword in normalized for keyword in TASK_KEYWORDS["budget"]) else 0.7
+        candidates.append(
+          Candidate(
+            value=f"{amount_normalized} {currency}",
+            score=context_score,
+            evidence_text=context_text[:500],
+            source_chunk_index=source_chunk_index,
+            metadata_source="rules",
+          )
+        )
   return candidates
 
 
