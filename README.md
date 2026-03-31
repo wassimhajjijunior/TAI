@@ -108,6 +108,8 @@ Current files:
 - `0005_track_a_nlp_columns.sql`
 - `0006_track_a_embedding_dimension.sql`
 - `0007_track_a_requirements_fields.sql`
+- `0008_track_a_notifications.sql`
+- `0009_track_a_notification_idempotency.sql`
 
 Apply them to your local Supabase project before testing upload/persistence flows.
 
@@ -269,7 +271,7 @@ Worker status transitions:
 Track A compliance worker consumes `embedding_complete`, extracts key entities from document text, evaluates weighted requirements against company profile, and persists compliance report.
 
 Run compliance worker:
-
+    
 ```bash
 .venv311/Scripts/python -m apps.api.src.services.compliance.run_worker
 ```
@@ -278,6 +280,30 @@ Compliance persistence:
 
 - `requirements` table receives evaluated requirements (`met`, `weight`, `confidence`, `actual_value`)
 - `compliance_reports` stores `eligibility_score`, `recommendation`, and detailed `report` json
+
+### Notification Worker (Track A)
+
+Notification worker consumes `compliance_completed` and sends email via SendGrid template flow `compliance_report_high_score`.
+
+Run notification worker:
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.notification.run_worker
+```
+
+Required env vars in `apps/api/.env`:
+
+- `SENDGRID_API_KEY`
+- `SENDGRID_FROM_EMAIL`
+- `NOTIFICATION_RECIPIENT_EMAIL`
+- `WEB_BASE_URL`
+
+Email details:
+
+- Subject: `High Match`
+- Body includes score, budget, deadline, category, and document link
+- Delivery state is persisted in `notifications` table (`pending` → `sent`/`failed`)
+- Idempotency is enforced by event id + template + recipient unique index
 
 Reliability notes:
 

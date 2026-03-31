@@ -8,6 +8,7 @@ from importlib import import_module
 from typing import Any
 
 from .pipeline_events import (
+  EVENT_COMPLIANCE_COMPLETED,
   EVENT_EMBEDDING_COMPLETE,
   EVENT_EXCHANGE,
   EVENT_EXCHANGE_TYPE,
@@ -17,6 +18,7 @@ from .pipeline_events import (
   QUEUE_COMPLIANCE,
   QUEUE_EMBEDDING,
   QUEUE_NLP,
+  QUEUE_NOTIFICATION,
   QUEUE_OCR,
 )
 
@@ -70,12 +72,14 @@ def get_topology_metadata() -> dict[str, object]:
       "nlp": QUEUE_NLP,
       "embedding": QUEUE_EMBEDDING,
       "compliance": QUEUE_COMPLIANCE,
+      "notification": QUEUE_NOTIFICATION,
     },
     "event_flow": [
       EVENT_DOCUMENT_UPLOADED,
       EVENT_OCR_COMPLETE,
       EVENT_NLP_COMPLETED,
       EVENT_EMBEDDING_COMPLETE,
+      EVENT_COMPLIANCE_COMPLETED,
     ],
   }
 
@@ -92,6 +96,7 @@ def declare_topology(channel: Any) -> None:
     (QUEUE_NLP, EVENT_OCR_COMPLETE),
     (QUEUE_EMBEDDING, EVENT_NLP_COMPLETED),
     (QUEUE_COMPLIANCE, EVENT_EMBEDDING_COMPLETE),
+    (QUEUE_NOTIFICATION, EVENT_COMPLIANCE_COMPLETED),
   ]
 
   for queue_name, routing_key in bindings:

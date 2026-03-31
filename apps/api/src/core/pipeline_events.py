@@ -8,6 +8,7 @@ EVENT_DOCUMENT_UPLOADED = "document_uploaded"
 EVENT_OCR_COMPLETE = "ocr_complete"
 EVENT_NLP_COMPLETED = "nlp_completed"
 EVENT_EMBEDDING_COMPLETE = "embedding_complete"
+EVENT_COMPLIANCE_COMPLETED = "compliance_completed"
 
 EVENT_EXCHANGE = "p2m.events"
 EVENT_EXCHANGE_TYPE = "topic"
@@ -16,6 +17,7 @@ QUEUE_OCR = "track_a.ocr.queue"
 QUEUE_NLP = "track_a.nlp.queue"
 QUEUE_EMBEDDING = "track_a.embedding.queue"
 QUEUE_COMPLIANCE = "track_a.compliance.queue"
+QUEUE_NOTIFICATION = "track_a.notification.queue"
 
 
 @dataclass(frozen=True)

@@ -58,6 +58,19 @@ class ComplianceReportRecord(TypedDict):
   report: dict[str, object] | None
 
 
+class NotificationRecord(TypedDict):
+  id: str
+  event_id: str | None
+  document_id: str
+  tenant_id: str
+  recipient_email: str
+  template_name: str
+  channel: str
+  status: str
+  subject: str
+  payload: dict[str, object] | None
+
+
 @dataclass(frozen=True)
 class DocumentRecord:
   id: str
@@ -246,6 +259,7 @@ def delete_document(document_id: str, tenant_id: str) -> bool:
   _ = client.table("chunks").delete().eq("document_id", document_id).execute()
   _ = client.table("requirements").delete().eq("document_id", document_id).execute()
   _ = client.table("compliance_reports").delete().eq("document_id", document_id).execute()
+  _ = client.table("notifications").delete().eq("document_id", document_id).execute()
   _ = (
     client.table("documents")
     .delete()
@@ -584,4 +598,89 @@ def get_compliance_report(document_id: str) -> ComplianceReportRecord | None:
     "eligibility_score": _to_float(normalized.get("eligibility_score")),
     "recommendation": str(normalized.get("recommendation")) if normalized.get("recommendation") is not None else None,
     "report": cast(dict[str, object] | None, report_obj if isinstance(report_obj, dict) else None),
+  }
+
+
+def create_notification(
+  event_id: str,
+  document_id: str,
+  tenant_id: str,
+  recipient_email: str,
+  template_name: str,
+  channel: str,
+  status: str,
+  subject: str,
+  payload: dict[str, object],
+) -> NotificationRecord:
+  client = _get_client()
+  row = {
+    "id": str(uuid4()),
+    "event_id": event_id,
+    "document_id": document_id,
+    "tenant_id": tenant_id,
+    "recipient_email": recipient_email,
+    "template_name": template_name,
+    "channel": channel,
+    "status": status,
+    "subject": subject,
+    "payload": payload,
+  }
+  result = client.table("notifications").insert(row).execute()
+  data = getattr(result, "data", [])
+  if not data:
+    raise RuntimeError("Failed to insert notification")
+  inserted = cast(dict[str, object], data[0])
+  payload_obj = inserted.get("payload")
+  return {
+    "id": str(inserted.get("id", row["id"])),
+    "event_id": str(inserted.get("event_id", event_id)) if inserted.get("event_id") is not None else None,
+    "document_id": str(inserted.get("document_id", document_id)),
+    "tenant_id": str(inserted.get("tenant_id", tenant_id)),
+    "recipient_email": str(inserted.get("recipient_email", recipient_email)),
+    "template_name": str(inserted.get("template_name", template_name)),
+    "channel": str(inserted.get("channel", channel)),
+    "status": str(inserted.get("status", status)),
+    "subject": str(inserted.get("subject", subject)),
+    "payload": cast(dict[str, object] | None, payload_obj if isinstance(payload_obj, dict) else None),
+  }
+
+
+def update_notification_status(notification_id: str, status: str) -> bool:
+  client = _get_client()
+  result = client.table("notifications").update({"status": status}).eq("id", notification_id).execute()
+  data = getattr(result, "data", None)
+  return bool(data)
+
+
+def get_notification_by_event(
+  event_id: str,
+  template_name: str,
+  recipient_email: str,
+) -> NotificationRecord | None:
+  client = _get_client()
+  result = (
+    client.table("notifications")
+    .select("id,event_id,document_id,tenant_id,recipient_email,template_name,channel,status,subject,payload")
+    .eq("event_id", event_id)
+    .eq("template_name", template_name)
+    .eq("recipient_email", recipient_email)
+    .maybe_single()
+    .execute()
+  )
+  data = getattr(result, "data", None)
+  if not data:
+    return None
+  normalized = cast(dict[str, object], data)
+  payload_obj = normalized.get("payload")
+  return {
+    "id": str(normalized.get("id", "")),
+    "event_id": str(normalized.get("event_id")) if normalized.get("event_id") is not None else None,
+    "document_id": str(normalized.get("document_id", "")),
+    "tenant_id": str(normalized.get("tenant_id", "")),
+    "recipient_email": str(normalized.get("recipient_email", "")),
+    "template_name": str(normalized.get("template_name", "")),
+    "channel": str(normalized.get("channel", "")),
+    "status": str(normalized.get("status", "")),
+    "subject": str(normalized.get("subject", "")),
+    "payload": cast(dict[str, object] | None, payload_obj if isinstance(payload_obj, dict) else None),
   }
