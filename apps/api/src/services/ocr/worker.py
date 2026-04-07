@@ -1,38 +1,20 @@
-import os
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from ...core import document_repository
-from ...core.env import load_local_env_if_present
+from ...core.file_storage import save_ocr_artifact
 from ...core.pipeline_events import EVENT_OCR_COMPLETE, QUEUE_OCR, build_event
 from ...core.rabbitmq import consume, publish_event
 
 
-def _mistral_client() -> Any:
-  load_local_env_if_present()
-  api_key = os.getenv("MISTRAL_API_KEY")
-  if not api_key:
-    raise RuntimeError("Missing required environment variable: MISTRAL_API_KEY")
-
-  mistral_module = import_module("mistralai")
-  mistral_class = getattr(mistral_module, "Mistral", None)
-  if mistral_class is None:
-    mistral_client_module = import_module("mistralai.client")
-    mistral_class = getattr(mistral_client_module, "Mistral", None)
-  if mistral_class is None:
-    raise RuntimeError("Unsupported mistralai package: Mistral client class not found")
-  return mistral_class(api_key=api_key)
-
-
-def _extract_markdown_text(ocr_response: Any) -> str:
-  pages = getattr(ocr_response, "pages", [])
-  markdown_parts: list[str] = []
-  for page in pages:
-    markdown = page.get("markdown") if isinstance(page, dict) else getattr(page, "markdown", "")
-    if markdown:
-      markdown_parts.append(str(markdown))
-  return "\n\n".join(markdown_parts)
+def _load_ocr_helpers() -> tuple[Any, Any, Any]:
+  client_module = import_module("apps.api.src.services.ocr.client")
+  serializer_module = import_module("apps.api.src.services.ocr.serializer")
+  create_mistral_client = getattr(client_module, "create_mistral_client")
+  build_ocr_artifact = getattr(serializer_module, "build_ocr_artifact")
+  extract_markdown_text = getattr(serializer_module, "extract_markdown_text")
+  return create_mistral_client, build_ocr_artifact, extract_markdown_text
 
 
 def process_document_uploaded(event_payload: dict[str, Any]) -> None:
@@ -54,7 +36,8 @@ def process_document_uploaded(event_payload: dict[str, Any]) -> None:
     _ = document_repository.update_document_status(document_id, tenant_id, "ocr_failed")
     raise RuntimeError(f"OCR storage path not found: {storage_path}")
 
-  client = _mistral_client()
+  create_mistral_client, build_ocr_artifact, extract_markdown_text = _load_ocr_helpers()
+  client = create_mistral_client()
   uploaded_file = client.files.upload(
     file={
       "file_name": filename,
@@ -75,7 +58,9 @@ def process_document_uploaded(event_payload: dict[str, Any]) -> None:
     extract_footer=True,
   )
 
-  ocr_text = _extract_markdown_text(ocr_response)
+  ocr_text = extract_markdown_text(ocr_response)
+  artifact_payload = build_ocr_artifact(document_id, tenant_id, filename, ocr_response, ocr_text)
+  ocr_json_path = save_ocr_artifact(document_id, artifact_payload)
   completion_event = build_event(
     EVENT_OCR_COMPLETE,
     {
@@ -83,6 +68,7 @@ def process_document_uploaded(event_payload: dict[str, Any]) -> None:
       "tenant_id": tenant_id,
       "filename": filename,
       "ocr_text": ocr_text,
+      "ocr_json_path": ocr_json_path,
       "status": "ocr_complete",
     },
   )

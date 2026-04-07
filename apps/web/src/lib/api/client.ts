@@ -10,6 +10,23 @@ export type UploadedDocument = {
   status: string;
 };
 
+export type OcrArtifact = {
+  document_id: string;
+  tenant_id: string;
+  filename: string;
+  model: string;
+  table_format: string;
+  text: string;
+  pages: Array<{
+    page_index: number;
+    markdown: string;
+    images: unknown[];
+    dimensions: Record<string, unknown> | null;
+    raw: Record<string, unknown>;
+  }>;
+  raw_response: Record<string, unknown>;
+};
+
 export type ProcessingStage =
   | "uploaded"
   | "ocr_processing"
@@ -120,6 +137,24 @@ export async function deleteDocument(documentId: string): Promise<void> {
   };
 
   throw new Error(payload.detail ?? "Failed to delete document");
+}
+
+export async function fetchDocumentOcrArtifact(documentId: string): Promise<OcrArtifact> {
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents/${documentId}/ocr-artifact`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as {
+    detail?: string;
+    artifact?: OcrArtifact;
+  };
+
+  if (!response.ok || !payload.artifact) {
+    throw new Error(payload.detail ?? "Failed to load OCR artifact");
+  }
+
+  return payload.artifact;
 }
 
 export type MessagingStatus = {
