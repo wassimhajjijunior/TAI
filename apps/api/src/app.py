@@ -60,15 +60,34 @@ def _register_routes(route_definitions: Sequence[RouteDef]) -> None:
 
 
 for route_group in [
-  DOCUMENT_ROUTES,
-  COMPLIANCE_ROUTES,
-  COMPANY_ROUTES,
-  RAG_ROUTES,
-  GENERATE_ROUTES,
-  EXPORT_ROUTES,
-  SYSTEM_ROUTES,
+    DOCUMENT_ROUTES,
+    COMPLIANCE_ROUTES,
+    COMPANY_ROUTES,
+    RAG_ROUTES,
+    GENERATE_ROUTES,
+    EXPORT_ROUTES,
+    SYSTEM_ROUTES,
 ]:
-  _register_routes(route_group)
+    _register_routes(route_group)
+
+
+# Track B worker entry points for CLI
+@app.get("/workers/rag")
+def get_rag_worker():
+    from .services.rag.worker import run_rag_worker
+    return {"status": "manual_trigger_required", "note": "Use 'python -m apps.api.src.services.rag.worker' to run"}
+
+
+@app.get("/workers/llm")
+def get_llm_worker():
+    from .services.llm.worker import run_llm_worker
+    return {"status": "manual_trigger_required", "note": "Use 'python -m apps.api.src.services.llm.worker' to run"}
+
+
+@app.get("/workers/export")
+def get_export_worker():
+    from .services.export.worker import run_export_worker
+    return {"status": "manual_trigger_required", "note": "Use 'python -m apps.api.src.services.export.worker' to run"}
 
 
 register_websocket_routes(app)
