@@ -10,6 +10,42 @@ export type UploadedDocument = {
   status: string;
 };
 
+export type RagSearchResult = {
+  id: string;
+  document_id: string;
+  content: string;
+  content_translated: string | null;
+  position: number;
+  page_number?: number | null;
+  similarity: number;
+};
+
+export type RagQueryResponse = {
+  document_id: string;
+  query: string;
+  results: RagSearchResult[];
+  total_results: number;
+};
+
+export type GeneratedResponse = {
+  id: string;
+  document_id: string;
+  content: string;
+  citations: Record<string, unknown> | null;
+  artifact_path?: string;
+  created_at: string;
+};
+
+export type ExportResponse = {
+  export_id: string;
+  document_id: string;
+  response_id: string;
+  format: string;
+  file_path: string;
+  status: string;
+  download_url: string;
+};
+
 export type OcrArtifact = {
   document_id: string;
   tenant_id: string;
@@ -189,5 +225,62 @@ export async function fetchMessagingStatus(): Promise<MessagingStatus> {
     throw new Error(payload.detail ?? "Failed to load messaging status");
   }
 
+  return payload;
+}
+
+export async function ragQuery(documentId: string, query: string, topK = 5): Promise<RagQueryResponse> {
+  const tenantId = "00000000-0000-0000-0000-000000000001";
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/rag/query?tenant_id=${tenantId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    cache: "no-store",
+    body: JSON.stringify({ document_id: documentId, query, top_k: topK }),
+  });
+
+  const payload = (await response.json()) as RagQueryResponse & { detail?: string };
+  if (!response.ok) {
+    throw new Error(payload.detail ?? "RAG query failed");
+  }
+  return payload;
+}
+
+export async function generateTenderResponse(documentId: string, query: string): Promise<GeneratedResponse> {
+  const tenantId = "00000000-0000-0000-0000-000000000001";
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/generate/response?tenant_id=${tenantId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    cache: "no-store",
+    body: JSON.stringify({ document_id: documentId, query }),
+  });
+
+  const payload = (await response.json()) as GeneratedResponse & { detail?: string };
+  if (!response.ok) {
+    throw new Error(payload.detail ?? "Generation failed");
+  }
+  return payload;
+}
+
+export async function exportGeneratedResponse(documentId: string, responseId: string): Promise<ExportResponse> {
+  const tenantId = "00000000-0000-0000-0000-000000000001";
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents/${documentId}/export?tenant_id=${tenantId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    cache: "no-store",
+    body: JSON.stringify({ response_id: responseId, format: "docx" }),
+  });
+
+  const payload = (await response.json()) as ExportResponse & { detail?: string };
+  if (!response.ok) {
+    throw new Error(payload.detail ?? "Export failed");
+  }
   return payload;
 }

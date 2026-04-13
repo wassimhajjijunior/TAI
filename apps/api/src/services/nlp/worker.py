@@ -4,16 +4,12 @@ from typing import Any
 from ...core import document_repository
 from ...core.pipeline_events import EVENT_NLP_COMPLETED, QUEUE_NLP, build_event
 from ...core.rabbitmq import consume, publish_event
-from .chunking import build_hybrid_chunks, detect_language
+from .chunking import build_chonkie_chunks, detect_language
 from .constants import (
-  CHUNK_OVERLAP_TOKENS,
   DEFAULT_TENANT_ID,
   MAX_CHUNK_TOKENS,
-  SEMANTIC_MIN_TOKENS,
-  SEMANTIC_SIMILARITY_THRESHOLD,
-  TABLE_MAX_ROWS_PER_CHUNK,
 )
-from .metadata import build_metadata
+from .metadata import build_chunk_metadata, build_metadata
 from .text_utils import clean_text_preserve_structure
 from .translation import translate_chunks_to_english
 
@@ -66,20 +62,19 @@ def process_ocr_complete(event_payload: dict[str, Any]) -> None:
 
   cleaned_text = clean_text_preserve_structure(ocr_text)
   language, lang_confidence = detect_language(cleaned_text)
-  chunks = build_hybrid_chunks(
-    text=cleaned_text,
-    max_tokens=MAX_CHUNK_TOKENS,
-    overlap_tokens=CHUNK_OVERLAP_TOKENS,
-    semantic_min_tokens=SEMANTIC_MIN_TOKENS,
-    semantic_similarity_threshold=SEMANTIC_SIMILARITY_THRESHOLD,
-    table_max_rows_per_chunk=TABLE_MAX_ROWS_PER_CHUNK,
-  )
+  chunks = build_chonkie_chunks(cleaned_text, MAX_CHUNK_TOKENS)
   translated_chunks = translate_chunks_to_english(chunks, language)
+  chunk_metadata = build_chunk_metadata(chunks)
   metadata = build_metadata(chunks, language, lang_confidence)
 
   chunk_texts = [chunk.text for chunk in chunks]
   try:
-    document_repository.replace_document_chunks(document_id, chunk_texts, translated_chunks)
+    document_repository.replace_document_chunks(
+      document_id,
+      chunk_texts,
+      translated_chunks,
+      chunk_metadata,
+    )
   except Exception as error:
     error_text = str(error)
     if "chunks_document_id_fkey" in error_text or "is not present in table \"documents\"" in error_text:

@@ -1,71 +1,64 @@
 import os
 from importlib import import_module
+from typing import Any
 
-from .constants import EMBEDDING_DIMENSION, HF_DEFAULT_EMBEDDING_MODEL
-
-
-def hf_embedding_endpoint() -> str:
-  configured = os.getenv("HF_EMBEDDING_API_URL", "").strip()
-  if configured:
-    return configured
-
-  model_name = os.getenv("HF_EMBEDDING_MODEL", HF_DEFAULT_EMBEDDING_MODEL).strip() or HF_DEFAULT_EMBEDDING_MODEL
-  return f"https://router.huggingface.co/hf-inference/models/{model_name}/pipeline/feature-extraction"
+from ...core.env import load_local_env_if_present
+from .constants import EMBEDDING_DIMENSION, LANGCHAIN_DEFAULT_EMBEDDING_MODEL
 
 
-def hf_token() -> str:
-  token = os.getenv("HF_TOKEN", "").strip()
+def _load_langchain_hf_endpoint_embeddings_class():
+  module = import_module("langchain_huggingface")
+  return getattr(module, "HuggingFaceEndpointEmbeddings")
+
+
+def _embedding_model_name() -> str:
+  return os.getenv("LANGCHAIN_EMBEDDING_MODEL", LANGCHAIN_DEFAULT_EMBEDDING_MODEL).strip() or LANGCHAIN_DEFAULT_EMBEDDING_MODEL
+
+
+def _huggingface_token() -> str:
+  load_local_env_if_present()
+  return os.getenv("HF_TOKEN", "").strip()
+
+
+def _resolve_embeddings_model() -> Any:
+  load_local_env_if_present()
+  token = _huggingface_token()
   if not token:
     raise RuntimeError("Missing required environment variable: HF_TOKEN")
-  return token
+
+  model_name = _embedding_model_name()
+  EndpointEmbeddingsClass = _load_langchain_hf_endpoint_embeddings_class()
+  return EndpointEmbeddingsClass(
+    model=model_name,
+    repo_id=model_name,
+    huggingfacehub_api_token=token,
+    task="feature-extraction",
+  )
 
 
-def coerce_embeddings(payload: object, expected_count: int) -> list[list[float]]:
-  if isinstance(payload, dict):
-    embeddings_value = payload.get("embeddings") if isinstance(payload.get("embeddings"), list) else None
-    if embeddings_value is not None:
-      payload = embeddings_value
+def request_embeddings(texts: list[str]) -> list[list[float]]:
+  if not texts:
+    return []
 
-  if isinstance(payload, list) and payload and all(isinstance(item, (int, float)) for item in payload):
-    vectors = [[float(value) for value in payload]]
-  elif isinstance(payload, list) and all(isinstance(item, list) for item in payload):
-    vectors = [[float(value) for value in row if isinstance(value, (int, float))] for row in payload]
-  else:
-    raise RuntimeError("Unexpected embedding payload shape from Hugging Face endpoint")
+  embeddings_model = _resolve_embeddings_model()
+  try:
+    vectors = embeddings_model.embed_documents(texts)
+  except Exception as error:
+    raise RuntimeError(f"LangChain embedding request failed: {error}") from error
 
-  if len(vectors) != expected_count:
+  normalized_vectors: list[list[float]] = []
+  for vector in vectors:
+    normalized_vectors.append([float(value) for value in vector])
+
+  if len(normalized_vectors) != len(texts):
     raise RuntimeError(
-      f"Embedding payload count mismatch: expected {expected_count}, got {len(vectors)}"
+      f"Embedding payload count mismatch: expected {len(texts)}, got {len(normalized_vectors)}"
     )
 
-  for vector in vectors:
+  for vector in normalized_vectors:
     if len(vector) != EMBEDDING_DIMENSION:
       raise RuntimeError(
         f"Embedding dimension mismatch: expected {EMBEDDING_DIMENSION}, got {len(vector)}"
       )
 
-  return vectors
-
-
-def request_embeddings(texts: list[str]) -> list[list[float]]:
-  requests_module = import_module("requests")
-  post = getattr(requests_module, "post")
-
-  response = post(
-    hf_embedding_endpoint(),
-    headers={"Authorization": f"Bearer {hf_token()}"},
-    json={
-      "inputs": texts,
-      "options": {"wait_for_model": True},
-    },
-    timeout=45,
-  )
-  if not bool(getattr(response, "ok", False)):
-    response_text = str(getattr(response, "text", ""))
-    raise RuntimeError(f"HF embedding request failed: {getattr(response, 'status_code', 'unknown')} {response_text}")
-
-  payload = response.json()
-  if isinstance(payload, dict) and "error" in payload:
-    raise RuntimeError(f"HF embedding error: {payload['error']}")
-
-  return coerce_embeddings(payload, len(texts))
+  return normalized_vectors

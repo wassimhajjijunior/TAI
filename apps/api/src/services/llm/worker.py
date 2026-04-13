@@ -1,7 +1,7 @@
 """LLM worker for processing generation requests via RabbitMQ."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from ...core import document_repository
 from ...core.file_storage import save_response_artifact
@@ -76,11 +76,12 @@ def process_llm_generation(event_payload: dict[str, Any]) -> None:
             "model": "llama-3.3-70b-versatile",
             "sections": sections,
         }
+        citations_payload = cast(dict[str, object], citations_data)
 
         response_record = document_repository.create_response(
             document_id=document_id,
             content=response_text,
-            citations=citations_data,
+            citations=citations_payload,
         )
 
         artifact_content = {
@@ -188,11 +189,12 @@ def process_generation_manual(
         "model": "llama-3.3-70b-versatile",
         "sections": sections or ["technical", "financial", "administrative"],
     }
+    citations_payload = cast(dict[str, object], citations_data)
 
     response_record = document_repository.create_response(
         document_id=document_id,
         content=response_text,
-        citations=citations_data,
+        citations=citations_payload,
     )
 
     artifact_content = {

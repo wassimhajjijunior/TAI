@@ -62,12 +62,14 @@ def search_similar_chunks(
         data = getattr(result, "data", [])
         results: list[dict[str, object]] = []
         for item in data:
+            position_raw = item.get("position")
+            position = int(position_raw) if position_raw is not None else 0
             results.append({
                 "id": str(item.get("id", "")),
                 "document_id": str(item.get("document_id", "")),
                 "content": str(item.get("content", "")),
                 "content_translated": str(item.get("content_translated", "")) if item.get("content_translated") else None,
-                "position": int(item.get("position", 0)),
+                "position": position,
                 "page_number": int(item.get("page_number", 0)) if item.get("page_number") else None,
                 "similarity": float(item.get("similarity", 0.0)),
             })
@@ -154,7 +156,8 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 def retrieve_context_for_query(
     document_id: str,
     query: str,
-    hf_client: Any | None = None,
+    query_embedding: list[float] | None = None,
+    embedding_client: Any | None = None,
     top_k: int = 5,
 ) -> list[dict[str, object]]:
     """Retrieve relevant context chunks for a query.
@@ -162,23 +165,27 @@ def retrieve_context_for_query(
     Args:
         document_id: The document ID to search
         query: The user query
-        hf_client: Optional HuggingFace client for generating query embedding
+        embedding_client: Optional embedding client for generating query embedding
         top_k: Number of chunks to retrieve
         
     Returns:
         List of relevant chunks with similarity scores
     """
-    if hf_client is None:
+    resolved_query_embedding: list[float]
+    if query_embedding is not None:
+        resolved_query_embedding = query_embedding
+    elif embedding_client is None:
         # Lazy import to match Track A pattern
         from importlib import import_module
+
         embedding_module = import_module("apps.api.src.services.embedding.hf_client")
         request_embeddings = getattr(embedding_module, "request_embeddings")
         embeddings = request_embeddings([query])
-        query_embedding = embeddings[0]
+        resolved_query_embedding = embeddings[0]
     else:
-        query_embedding = hf_client.embed_query(query)
-    
-    return search_similar_chunks(document_id, query_embedding, top_k)
+        resolved_query_embedding = embedding_client.embed_query(query)
+
+    return search_similar_chunks(document_id, resolved_query_embedding, top_k)
 
 
 def format_chunks_as_context(chunks: list[dict[str, object]]) -> str:

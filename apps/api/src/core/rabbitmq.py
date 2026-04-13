@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 
+from .env import load_local_env_if_present
 from .pipeline_events import (
     EVENT_COMPLIANCE_COMPLETED,
     EVENT_EMBEDDING_COMPLETE,
@@ -47,6 +48,19 @@ class SettlementChannelError(RuntimeError):
     pass
 
 
+def _is_auth_error(error: Exception) -> bool:
+    auth_error_names = {
+        "ProbableAuthenticationError",
+        "AuthenticationError",
+        "AccessRefused",
+    }
+    if type(error).__name__ in auth_error_names:
+        return True
+
+    message = str(error).lower()
+    return "access_refused" in message or "login was refused" in message
+
+
 def _is_reconnect_required_error(error: Exception) -> bool:
     reconnect_error_names = {
         "StreamLostError",
@@ -73,6 +87,8 @@ def _is_reconnect_required_error(error: Exception) -> bool:
 
 
 def get_rabbitmq_settings() -> RabbitMqSettings:
+    load_local_env_if_present()
+
     heartbeat_raw = os.getenv("RABBITMQ_HEARTBEAT_SECONDS", "900").strip()
     socket_timeout_raw = os.getenv("RABBITMQ_SOCKET_TIMEOUT_SECONDS", "900").strip()
     blocked_timeout_raw = os.getenv("RABBITMQ_BLOCKED_TIMEOUT_SECONDS", "900").strip()
@@ -105,7 +121,7 @@ def get_rabbitmq_settings() -> RabbitMqSettings:
         retry_delay_seconds = 2.0
 
     return RabbitMqSettings(
-        url=os.getenv("RABBITMQ_URL", "amqp://admin:***@localhost:5672/%2F"),
+        url=os.getenv("RABBITMQ_URL", "amqp://admin:admin@localhost:5672/%2F"),
         heartbeat_seconds=heartbeat_seconds,
         socket_timeout_seconds=socket_timeout_seconds,
         blocked_connection_timeout_seconds=blocked_connection_timeout_seconds,
@@ -354,7 +370,15 @@ def consume(queue_name: str, callback: Any) -> None:
                     queue_name,
                 )
                 raise
-            except Exception:
+            except Exception as error:
+                if _is_auth_error(error):
+                    logger.error(
+                        "RabbitMQ authentication failed. Check RABBITMQ_URL credentials and broker users. Current URL source is env/.env. Stopping consumer for queue '%s'.",
+                        queue_name,
+                    )
+                    raise RuntimeError(
+                        "RabbitMQ authentication failed. Fix RABBITMQ_URL (username/password/vhost) and restart worker."
+                    ) from error
                 logger.exception(
                     "Consumer loop error on queue '%s'; reconnecting in %.1f second(s)",
                     queue_name,

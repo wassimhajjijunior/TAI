@@ -30,6 +30,7 @@ class ChunkRecord(TypedDict):
     content: str
     content_translated: str | None
     position: int
+    metadata: dict[str, object] | None
 
 
 class RequirementRecord(TypedDict):
@@ -342,7 +343,10 @@ def update_document_nlp_result(
 
 
 def replace_document_chunks(
-    document_id: str, chunks: list[str], translated_chunks: list[str]
+    document_id: str,
+    chunks: list[str],
+    translated_chunks: list[str],
+    chunk_metadata: list[dict[str, object]] | None = None,
 ) -> None:
     client = _get_client()
     _ = client.table("chunks").delete().eq("document_id", document_id).execute()
@@ -355,6 +359,12 @@ def replace_document_chunks(
         translated = (
             translated_chunks[index] if index < len(translated_chunks) else None
         )
+        metadata = (
+            chunk_metadata[index]
+            if chunk_metadata is not None and index < len(chunk_metadata)
+            else None
+        )
+        metadata_payload = metadata if isinstance(metadata, dict) else {}
         rows.append(
             {
                 "id": str(uuid4()),
@@ -362,21 +372,46 @@ def replace_document_chunks(
                 "content": chunk,
                 "content_translated": translated,
                 "position": index,
+                "metadata": metadata_payload,
             }
         )
 
-    _ = client.table("chunks").insert(rows).execute()
+    try:
+        _ = client.table("chunks").insert(rows).execute()
+    except Exception as error:
+        error_text = str(error)
+        if "metadata" not in error_text:
+            raise
+
+        fallback_rows: list[dict[str, object]] = []
+        for row in rows:
+            fallback_row = dict(row)
+            fallback_row.pop("metadata", None)
+            fallback_rows.append(fallback_row)
+        _ = client.table("chunks").insert(fallback_rows).execute()
 
 
 def list_document_chunks(document_id: str) -> list[ChunkRecord]:
     client = _get_client()
-    result = (
-        client.table("chunks")
-        .select("id,document_id,content,content_translated,position")
-        .eq("document_id", document_id)
-        .order("position")
-        .execute()
-    )
+    try:
+        result = (
+            client.table("chunks")
+            .select("id,document_id,content,content_translated,position,metadata")
+            .eq("document_id", document_id)
+            .order("position")
+            .execute()
+        )
+    except Exception as error:
+        error_text = str(error)
+        if "metadata" not in error_text:
+            raise
+        result = (
+            client.table("chunks")
+            .select("id,document_id,content,content_translated,position")
+            .eq("document_id", document_id)
+            .order("position")
+            .execute()
+        )
 
     data = getattr(result, "data", [])
     records: list[ChunkRecord] = []
@@ -391,6 +426,7 @@ def list_document_chunks(document_id: str) -> list[ChunkRecord]:
             position = 0
 
         translated = normalized.get("content_translated")
+        metadata_raw = normalized.get("metadata")
         records.append(
             {
                 "id": str(normalized.get("id", "")),
@@ -400,6 +436,7 @@ def list_document_chunks(document_id: str) -> list[ChunkRecord]:
                 if isinstance(translated, str)
                 else None,
                 "position": position,
+                "metadata": metadata_raw if isinstance(metadata_raw, dict) else None,
             }
         )
 
