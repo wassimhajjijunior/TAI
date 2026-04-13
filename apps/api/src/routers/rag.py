@@ -1,3 +1,6 @@
+from typing import Any
+
+
 RAG_ENDPOINTS = [
     "POST /api/v1/rag/query",
 ]
@@ -16,15 +19,20 @@ async def rag_query(
         List of similar chunks with scores
     """
     from importlib import import_module
-    from typing import cast
-
     from ..core import document_repository
     from ..services.embedding.hf_client import request_embeddings
     from ..services.rag.client import search_similar_chunks
 
     document_id = str(payload.get("document_id", ""))
     query = str(payload.get("query", ""))
-    top_k = int(cast(object, payload.get("top_k", 5)))
+    top_k_raw = payload.get("top_k", 5)
+    if isinstance(top_k_raw, int):
+        top_k = top_k_raw
+    elif isinstance(top_k_raw, str) and top_k_raw.isdigit():
+        top_k = int(top_k_raw)
+    else:
+        top_k = 5
+    top_k = max(1, min(top_k, 20))
 
     if not document_id:
         fastapi = import_module("fastapi")

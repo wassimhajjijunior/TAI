@@ -7,7 +7,7 @@ from ...core.file_storage import save_ocr_artifact
 from ...core.pipeline_events import EVENT_OCR_COMPLETE, QUEUE_OCR, build_event
 from ...core.rabbitmq import consume, publish_event
 
-
+    
 def _load_ocr_helpers() -> tuple[Any, Any, Any]:
   client_module = import_module("apps.api.src.services.ocr.client")
   serializer_module = import_module("apps.api.src.services.ocr.serializer")

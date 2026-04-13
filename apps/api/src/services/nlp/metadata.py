@@ -3,10 +3,103 @@ import os
 import re
 from datetime import datetime
 from importlib import import_module
+from collections.abc import Mapping
 
-from .constants import FRENCH_MONTHS, HF_DEFAULT_MODEL, HF_ROUTER_URL, METADATA_TOP_CHUNKS, TASK_KEYWORDS
+from ...core.env import load_local_env_if_present
+from .constants import FRENCH_MONTHS, LANGCHAIN_GROQ_DEFAULT_MODEL, METADATA_TOP_CHUNKS, TASK_KEYWORDS
 from .models import Candidate, TextChunk
 from .text_utils import normalize_for_matching
+
+
+LLM_CHUNK_METADATA_KEYS = ["deadline", "budget", "country", "category"]
+PLACEHOLDER_METADATA_VALUES = {
+  "",
+  "unknown",
+  "n/a",
+  "na",
+  "none",
+  "null",
+  "not available",
+  "non disponible",
+  "-",
+}
+
+DEADLINE_CONTEXT_KEYWORDS = {
+  "date limite",
+  "date limite de remise",
+  "date de remise",
+  "date de reception",
+  "reception des offres",
+  "soumission",
+  "remise des offres",
+  "closing date",
+  "deadline",
+  "ouverture des offres",
+}
+
+DEADLINE_NEGATIVE_KEYWORDS = {
+  "decret",
+  "article",
+  "regissant",
+  "marches publics",
+  "loi",
+}
+
+
+def _groq_api_key() -> str:
+  load_local_env_if_present()
+  return os.getenv("GROQ_API_KEY", "").strip()
+
+
+def _groq_metadata_model() -> str:
+  configured = os.getenv("LANGCHAIN_GROQ_METADATA_MODEL", "").strip()
+  if configured:
+    return configured
+  return LANGCHAIN_GROQ_DEFAULT_MODEL
+
+
+def _message_content_to_text(raw_content: object) -> str:
+  if isinstance(raw_content, str):
+    return raw_content
+  if isinstance(raw_content, list):
+    parts: list[str] = []
+    for item in raw_content:
+      if isinstance(item, str):
+        parts.append(item)
+      elif isinstance(item, dict):
+        text = item.get("text")
+        if isinstance(text, str):
+          parts.append(text)
+    return "\n".join(parts)
+  return str(raw_content)
+
+
+def _invoke_groq_json(system_prompt: str, payload: Mapping[str, object], max_tokens: int = 220) -> dict[str, object] | None:
+  api_key = _groq_api_key()
+  if not api_key:
+    return None
+
+  try:
+    langchain_groq_module = import_module("langchain_groq")
+    ChatGroq = getattr(langchain_groq_module, "ChatGroq")
+    langchain_messages_module = import_module("langchain_core.messages")
+    SystemMessage = getattr(langchain_messages_module, "SystemMessage")
+    HumanMessage = getattr(langchain_messages_module, "HumanMessage")
+
+    llm = ChatGroq(
+      api_key=api_key,
+      model=_groq_metadata_model(),
+      temperature=0.0,
+      max_tokens=max_tokens,
+    )
+    response = llm.invoke([
+      SystemMessage(content=system_prompt),
+      HumanMessage(content=json.dumps(dict(payload), ensure_ascii=False)),
+    ])
+    content = _message_content_to_text(getattr(response, "content", ""))
+    return extract_json_object(content)
+  except Exception:
+    return None
 
 
 def score_chunk_for_task(chunk: TextChunk, task_name: str) -> int:
@@ -398,79 +491,47 @@ def extract_json_object(raw_text: str) -> dict[str, object] | None:
     return None
 
 
-def resolve_with_hf(task_name: str, relevant_chunks: list[TextChunk], candidates: list[Candidate]) -> Candidate | None:
-  hf_token = os.getenv("HF_TOKEN", "").strip()
-  if not hf_token:
+def resolve_with_groq(task_name: str, relevant_chunks: list[TextChunk], candidates: list[Candidate]) -> Candidate | None:
+  if not _groq_api_key():
     return None
-  requests_module = import_module("requests")
-  post = getattr(requests_module, "post")
-  model_name = os.getenv("HF_METADATA_MODEL", HF_DEFAULT_MODEL).strip() or HF_DEFAULT_MODEL
 
-  payload = {
+  payload: dict[str, object] = {
     "task": task_name,
     "candidate_values": [candidate.value for candidate in candidates],
     "chunks": [{"index": chunk.index, "text": chunk.text[:800]} for chunk in relevant_chunks],
     "rules": "Choose the best value by contextual evidence. Return strict JSON with keys value, confidence, evidence_text, source_chunk_index.",
   }
 
-  try:
-    response = post(
-      HF_ROUTER_URL,
-      headers={"Authorization": f"Bearer {hf_token}"},
-      json={
-        "model": model_name,
-        "messages": [
-          {
-            "role": "system",
-            "content": "You return only JSON. No markdown. No explanation.",
-          },
-          {
-            "role": "user",
-            "content": json.dumps(payload, ensure_ascii=False),
-          },
-        ],
-        "temperature": 0.0,
-        "max_tokens": 220,
-      },
-      timeout=20,
-    )
-    if not bool(getattr(response, "ok", False)):
-      return None
-    response_payload = response.json()
-    choices = response_payload.get("choices", []) if isinstance(response_payload, dict) else []
-    if not choices:
-      return None
-    first_choice = choices[0]
-    message = first_choice.get("message", {}) if isinstance(first_choice, dict) else {}
-    content = str(message.get("content", "")) if isinstance(message, dict) else ""
-    parsed = extract_json_object(content)
-    if not parsed:
-      return None
-
-    value = str(parsed.get("value", "")).strip()
-    if not value:
-      return None
-    confidence_raw = parsed.get("confidence", 0.75)
-    confidence = float(confidence_raw) if isinstance(confidence_raw, (int, float, str)) else 0.75
-    evidence_text = str(parsed.get("evidence_text", "")).strip() or relevant_chunks[0].text[:500]
-    source_chunk_raw = parsed.get("source_chunk_index", relevant_chunks[0].index)
-    source_chunk_index = int(source_chunk_raw) if isinstance(source_chunk_raw, (int, float, str)) else relevant_chunks[0].index
-
-    if task_name == "deadline":
-      parsed_date = parse_date_to_iso(value)
-      value = parsed_date if parsed_date else value
-    if task_name == "budget":
-      value = normalize_budget_value(value)
-
-    return Candidate(
-      value=value,
-      score=max(0.0, min(1.0, confidence)),
-      evidence_text=evidence_text[:500],
-      source_chunk_index=source_chunk_index,
-      metadata_source="hf_llm",
-    )
-  except Exception:
+  parsed = _invoke_groq_json(
+    "You return only JSON. No markdown. No explanation.",
+    payload,
+    max_tokens=220,
+  )
+  if not parsed:
     return None
+
+  value = str(parsed.get("value", "")).strip()
+  if not value:
+    return None
+  confidence_raw = parsed.get("confidence", 0.75)
+  confidence = float(confidence_raw) if isinstance(confidence_raw, (int, float, str)) else 0.75
+  evidence_text = str(parsed.get("evidence_text", "")).strip() or relevant_chunks[0].text[:500]
+  source_chunk_raw = parsed.get("source_chunk_index", relevant_chunks[0].index)
+  source_chunk_index = int(source_chunk_raw) if isinstance(source_chunk_raw, (int, float, str)) else relevant_chunks[0].index
+
+  if task_name == "deadline":
+    parsed_date = parse_date_to_iso(value)
+    value = parsed_date if parsed_date else value
+  if task_name == "budget":
+    value = normalize_budget_value(value)
+
+  return Candidate(
+    value=value,
+    score=max(0.0, min(1.0, confidence)),
+    evidence_text=evidence_text[:500],
+    source_chunk_index=source_chunk_index,
+    metadata_source="groq_llm",
+  )
 
 
 def metadata_item(value: str | None, confidence: float, evidence_text: str, source_chunk_index: int | None, metadata_source: str) -> dict[str, object]:
@@ -518,7 +579,7 @@ def resolve_task(task_name: str, relevant_chunks: list[TextChunk], all_chunks: l
     )
 
   if is_ambiguous(candidates):
-    llm_choice = resolve_with_hf(task_name, relevant_chunks, candidates)
+    llm_choice = resolve_with_groq(task_name, relevant_chunks, candidates)
     if llm_choice is not None:
       if task_name == "budget":
         llm_value = normalize_budget_value(llm_choice.value)
@@ -588,3 +649,158 @@ def build_metadata(chunks: list[TextChunk], language: str, confidence: float) ->
     "country": resolve_task("country", country_chunks, chunks),
     "category": resolve_task("category", category_chunks, chunks),
   }
+
+
+def _clean_chunk_metadata(raw: object) -> dict[str, object]:
+  if not isinstance(raw, dict):
+    return {}
+
+  cleaned: dict[str, object] = {}
+  for key in LLM_CHUNK_METADATA_KEYS:
+    value = raw.get(key)
+    if value is None:
+      continue
+    if isinstance(value, str):
+      normalized = value.strip()
+      if not normalized:
+        continue
+      cleaned[key] = normalized
+      continue
+    if isinstance(value, (int, float, bool)):
+      cleaned[key] = value
+      continue
+  return cleaned
+
+
+def _is_placeholder_value(value: str) -> bool:
+  normalized = normalize_for_matching(value)
+  normalized = re.sub(r"\s+", " ", normalized).strip()
+  return normalized in PLACEHOLDER_METADATA_VALUES
+
+
+def _sanitize_chunk_metadata(metadata: dict[str, object], chunk: TextChunk) -> dict[str, object]:
+  sanitized: dict[str, object] = {}
+  normalized_chunk_text = normalize_for_matching(chunk.text)
+
+  deadline_raw = metadata.get("deadline")
+  if isinstance(deadline_raw, str):
+    deadline_text = deadline_raw.strip()
+    if deadline_text and not _is_placeholder_value(deadline_text):
+      has_deadline_context = any(
+        keyword in normalized_chunk_text
+        for keyword in DEADLINE_CONTEXT_KEYWORDS
+      )
+      has_negative_context = any(
+        keyword in normalized_chunk_text
+        for keyword in DEADLINE_NEGATIVE_KEYWORDS
+      )
+      if not has_deadline_context or has_negative_context:
+        parsed_deadline = None
+      else:
+        parsed_deadline = parse_date_to_iso(deadline_text)
+      if parsed_deadline:
+        sanitized["deadline"] = parsed_deadline
+
+  budget_raw = metadata.get("budget")
+  if isinstance(budget_raw, str):
+    budget_text = budget_raw.strip()
+    if budget_text and not _is_placeholder_value(budget_text):
+      budget_value = normalize_budget_value(budget_text)
+      if budget_value:
+        sanitized["budget"] = budget_value
+
+  country_candidates = dedupe_candidates(extract_country_candidates([chunk]))
+  if country_candidates:
+    country = country_candidates[0].value.strip()
+    if country and not _is_placeholder_value(country):
+      sanitized["country"] = country
+
+  category, _ = category_from_text(chunk.text)
+  if category != "general":
+    sanitized["category"] = category
+
+  return sanitized
+
+
+def extract_chunk_metadata_with_rules(chunk: TextChunk) -> dict[str, object]:
+  metadata: dict[str, object] = {}
+
+  deadline_candidates = dedupe_candidates(extract_deadline_candidates([chunk]))
+  if deadline_candidates:
+    raw_deadline = deadline_candidates[0].value
+    parsed_deadline = parse_date_to_iso(raw_deadline)
+    deadline = parsed_deadline if parsed_deadline else raw_deadline
+    if deadline:
+      metadata["deadline"] = deadline
+
+  budget_candidates = dedupe_candidates(extract_budget_candidates([chunk]))
+  for candidate in budget_candidates:
+    budget_value = normalize_budget_value(candidate.value)
+    if budget_value:
+      metadata["budget"] = budget_value
+      break
+
+  country_candidates = dedupe_candidates(extract_country_candidates([chunk]))
+  if country_candidates:
+    country = country_candidates[0].value.strip()
+    if country:
+      metadata["country"] = country
+
+  category, _ = category_from_text(chunk.text)
+  if category != "general":
+    metadata["category"] = category
+
+  return metadata
+
+
+def extract_chunk_metadata(chunk: TextChunk) -> dict[str, object]:
+  rules_metadata = extract_chunk_metadata_with_rules(chunk)
+  if not _groq_api_key():
+    return _sanitize_chunk_metadata(rules_metadata, chunk)
+
+  prompt_payload: dict[str, object] = {
+    "task": "chunk_metadata_extraction",
+    "instructions": [
+      "Extract ONLY metadata explicitly present in the chunk text.",
+      "Allowed keys: deadline, budget, country, category.",
+      "Return only strict JSON object.",
+      "Do not include keys with empty/null/unknown values.",
+      "If no metadata exists, return {}.",
+    ],
+    "chunk": {
+      "index": chunk.index,
+      "text": chunk.text[:3000],
+    },
+  }
+
+  parsed = _invoke_groq_json(
+    (
+      "You are a strict JSON extractor. "
+      "Output ONLY a JSON object with optional keys: deadline, budget, country, category. "
+      "Never output null or placeholder values."
+    ),
+    prompt_payload,
+    max_tokens=220,
+  )
+  llm_metadata = _clean_chunk_metadata(parsed)
+  merged_metadata = dict(rules_metadata)
+  for key, value in llm_metadata.items():
+    if key not in merged_metadata:
+      merged_metadata[key] = value
+  return _sanitize_chunk_metadata(merged_metadata, chunk)
+
+
+def build_chunk_metadata(chunks: list[TextChunk]) -> list[dict[str, object]]:
+  chunk_metadata: list[dict[str, object]] = []
+  for chunk in chunks:
+    metadata = extract_chunk_metadata(chunk)
+    chunk_metadata.append(metadata)
+  return chunk_metadata
+
+
+def build_chunk_metadata_for_texts(chunk_texts: list[str]) -> list[dict[str, object]]:
+  chunks = [
+    TextChunk(index=index, text=text)
+    for index, text in enumerate(chunk_texts)
+  ]
+  return build_chunk_metadata(chunks)

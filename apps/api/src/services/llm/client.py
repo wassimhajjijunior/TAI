@@ -2,7 +2,9 @@
 
 import logging
 import os
-from typing import Any, Generator
+from typing import Any
+
+from ...core.env import load_local_env_if_present
 
 
 logger = logging.getLogger(__name__)
@@ -49,15 +51,34 @@ Instructions:
 Responses should be in English unless otherwise specified."""
 
 
-def _load_groq_client():
-    """Lazy load Groq client."""
+def _load_langchain_groq_chat_model(
+    model: str,
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    load_local_env_if_present()
     from importlib import import_module
-    groq_module = import_module("groq")
-    Groq = getattr(groq_module, "Groq")
+
+    module = import_module("langchain_groq")
+    ChatGroq = getattr(module, "ChatGroq")
     api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY environment variable not set")
-    return Groq(api_key=api_key)
+    return ChatGroq(
+        api_key=api_key,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def _load_langchain_messages() -> tuple[Any, Any]:
+    from importlib import import_module
+
+    module = import_module("langchain_core.messages")
+    SystemMessage = getattr(module, "SystemMessage")
+    HumanMessage = getattr(module, "HumanMessage")
+    return SystemMessage, HumanMessage
 
 
 def _detect_language(text: str) -> str:
@@ -157,25 +178,41 @@ def generate_response(
     Returns:
         The generated response text
     """
-    client = _load_groq_client()
-    
     language = _detect_language(query + " " + context)
     system_prompt = _get_system_prompt(language)
     user_prompt = _build_prompt(query, context, sections, company_info)
+    chat_model = _load_langchain_groq_chat_model(
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    SystemMessage, HumanMessage = _load_langchain_messages()
     
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=0.9,
+        response = chat_model.invoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
         )
-        
-        content = response.choices[0].message.content
+        raw_content = getattr(response, "content", "")
+        if isinstance(raw_content, str):
+            content = raw_content
+        elif isinstance(raw_content, list):
+            parts: list[str] = []
+            for item in raw_content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            content = "\n".join(parts)
+        else:
+            content = str(raw_content)
+
+        if not content.strip():
+            raise RuntimeError("Empty LLM response content")
         logger.info("Generated response using model=%s, tokens=%d", model, len(content.split()))
         return content
         
@@ -192,33 +229,41 @@ def generate_response_streaming(
     max_tokens: int = 4096,
     sections: list[str] | None = None,
     company_info: dict[str, Any] | None = None,
-) -> Generator[str, None, None]:
+) -> Any:
     """Generate a tender response with streaming support.
     
     Yields chunks of the response as they are generated.
     """
-    client = _load_groq_client()
-    
     language = _detect_language(query + " " + context)
     system_prompt = _get_system_prompt(language)
     user_prompt = _build_prompt(query, context, sections, company_info)
+    chat_model = _load_langchain_groq_chat_model(
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    SystemMessage, HumanMessage = _load_langchain_messages()
     
     try:
-        stream = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=0.9,
-            stream=True,
+        stream = chat_model.stream(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
         )
-        
+
         for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            raw_content = getattr(chunk, "content", "")
+            if isinstance(raw_content, str) and raw_content:
+                yield raw_content
+            elif isinstance(raw_content, list):
+                for item in raw_content:
+                    if isinstance(item, str) and item:
+                        yield item
+                    elif isinstance(item, dict):
+                        text = item.get("text")
+                        if isinstance(text, str) and text:
+                            yield text
                 
     except Exception as error:
         logger.exception("LLM streaming generation failed")
@@ -261,17 +306,12 @@ class LLMClient:
     
     def __init__(self, model: str = "llama-3.3-70b-versatile"):
         self.model = model
-        self._client = None
-    
-    def _get_client(self):
-        if self._client is None:
-            self._client = _load_groq_client()
-        return self._client
+        self._client: Any | None = None
     
     def generate(self, query: str, context: str, **kwargs: Any) -> str:
         """Generate response."""
         return generate_response(query, context, model=self.model, **kwargs)
     
-    def generate_stream(self, query: str, context: str, **kwargs: Any) -> Generator[str, None, None]:
+    def generate_stream(self, query: str, context: str, **kwargs: Any) -> Any:
         """Generate response with streaming."""
         yield from generate_response_streaming(query, context, model=self.model, **kwargs)

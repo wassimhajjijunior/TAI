@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def _load_embedding_client():
-    """Lazy load embedding HF client."""
     from importlib import import_module
 
     hf_client_module = import_module("apps.api.src.services.embedding.hf_client")

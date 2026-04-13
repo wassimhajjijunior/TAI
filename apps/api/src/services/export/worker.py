@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from ...core import document_repository
@@ -204,7 +204,7 @@ def export_to_docx(
     response_id: str,
     output_path: Path | None = None,
     tenant_id: str | None = None,
-) -> Path:
+) -> tuple[Path, str]:
     """Export a response to DOCX format.
 
     Args:
@@ -213,7 +213,7 @@ def export_to_docx(
         tenant_id: Tenant ID for validation
 
     Returns:
-        Path to the exported file
+        Tuple[path to exported file, export_id]
     """
     response = document_repository.get_response(response_id)
     if response is None:
@@ -238,13 +238,24 @@ def export_to_docx(
     )
     doc_data = getattr(doc_result, "data", None)
 
-    citations_data = response.get("citations")
-    citations = []
-    language = None
+    citations_data_raw = response.get("citations")
+    citations_data: dict[str, object] | None = (
+        citations_data_raw if isinstance(citations_data_raw, dict) else None
+    )
+    citations: list[dict[str, Any]] = []
+    language: str | None = None
 
-    if citations_data and isinstance(citations_data, dict):
-        citations = citations_data.get("citations", [])
-        language = citations_data.get("language")
+    if citations_data is not None:
+        raw_citations = citations_data.get("citations", [])
+        if isinstance(raw_citations, list):
+            citations = [
+                cast(dict[str, Any], item)
+                for item in raw_citations
+                if isinstance(item, dict)
+            ]
+        language_raw = citations_data.get("language")
+        if isinstance(language_raw, str):
+            language = language_raw
 
     texts = _get_language_texts(language)
 
@@ -257,8 +268,10 @@ def export_to_docx(
         "status": texts["completed"],
     }
 
-    if tenant_id is None and doc_data:
-        tenant_id = doc_data.get("tenant_id")
+    if tenant_id is None and isinstance(doc_data, dict):
+        tenant_raw = doc_data.get("tenant_id")
+        if isinstance(tenant_raw, str):
+            tenant_id = tenant_raw
 
     export_record = document_repository.create_export(
         document_id=document_id,
@@ -296,7 +309,7 @@ def export_to_docx(
         output_path,
     )
 
-    return output_path
+    return output_path, export_record["id"]
 
 
 def process_export_request(event_payload: dict[str, Any]) -> None:
@@ -317,7 +330,7 @@ def process_export_request(event_payload: dict[str, Any]) -> None:
 
     try:
         if format_type == "docx":
-            file_path = export_to_docx(response_id, tenant_id=tenant_id or None)
+            file_path, export_id = export_to_docx(response_id, tenant_id=tenant_id or None)
         else:
             raise RuntimeError(f"Unsupported export format: {format_type}")
 
@@ -327,6 +340,7 @@ def process_export_request(event_payload: dict[str, Any]) -> None:
                 EVENT_EXPORT_COMPLETE,
                 {
                     "response_id": response_id,
+                    "export_id": export_id,
                     "document_id": response["document_id"],
                     "tenant_id": tenant_id,
                     "format": format_type,

@@ -32,12 +32,10 @@ async def export_document(
         HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="response_id is required")
 
-    if format_type not in {"docx", "pdf"}:
+    if format_type != "docx":
         fastapi = import_module("fastapi")
         HTTPException = getattr(fastapi, "HTTPException")
-        raise HTTPException(
-            status_code=400, detail=f"Unsupported format: {format_type}. Use 'docx'"
-        )
+        raise HTTPException(status_code=400, detail="Unsupported format. Use 'docx'")
 
     response = document_repository.get_response(response_id)
     if response is None:
@@ -52,15 +50,12 @@ async def export_document(
             status_code=400, detail="Response does not belong to this document"
         )
 
-    file_path = export_to_docx(response_id, tenant_id=tenant_id)
-
-    export = document_repository.create_export(
-        document_id=document_id,
-        response_id=response_id,
-        format=format_type,
-        file_path=str(file_path),
-        tenant_id=tenant_id or "00000000-0000-0000-0000-000000000001",
-    )
+    file_path, export_id = export_to_docx(response_id, tenant_id=tenant_id)
+    export = document_repository.get_export(export_id)
+    if export is None:
+        fastapi = import_module("fastapi")
+        HTTPException = getattr(fastapi, "HTTPException")
+        raise HTTPException(status_code=500, detail="Failed to create export record")
 
     return {
         "export_id": export["id"],
@@ -82,7 +77,9 @@ def download_export(export_id: str) -> object:
     from pathlib import Path
 
     from importlib import import_module
-    from starlette.responses import FileResponse
+
+    responses_module = import_module("fastapi.responses")
+    FileResponse = getattr(responses_module, "FileResponse")
 
     from ..core import document_repository
 
