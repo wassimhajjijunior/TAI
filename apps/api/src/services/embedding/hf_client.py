@@ -41,14 +41,22 @@ def request_embeddings(texts: list[str]) -> list[list[float]]:
     return []
 
   embeddings_model = _resolve_embeddings_model()
-  try:
-    vectors = embeddings_model.embed_documents(texts)
-  except Exception as error:
-    raise RuntimeError(f"LangChain embedding request failed: {error}") from error
+  last_error: Exception | None = None
+  vectors: list[list[float]] | None = None
+  for _ in range(3):
+    try:
+      raw_vectors = embeddings_model.embed_documents(texts)
+      vectors = [[float(value) for value in vector] for vector in raw_vectors]
+      break
+    except Exception as error:
+      last_error = error
+
+  if vectors is None:
+    raise RuntimeError(f"LangChain embedding request failed: {last_error}") from last_error
 
   normalized_vectors: list[list[float]] = []
   for vector in vectors:
-    normalized_vectors.append([float(value) for value in vector])
+    normalized_vectors.append(vector)
 
   if len(normalized_vectors) != len(texts):
     raise RuntimeError(

@@ -198,8 +198,8 @@ Required env vars in `apps/api/.env`:
 
 - `RABBITMQ_URL`
 - `MISTRAL_API_KEY`
-- `HF_TOKEN` (optional but recommended for metadata adjudication)
-- `HF_METADATA_MODEL` (optional override; default `Qwen/Qwen2.5-14B-Instruct:featherless-ai`)
+- `GROQ_API_KEY` (required for Groq-backed metadata extraction)
+- `LANGCHAIN_GROQ_METADATA_MODEL` (optional override; default `llama-3.3-70b-versatile`)
 
 ### NLP Worker (Track A)
 
@@ -211,12 +211,20 @@ Run NLP worker:
 .venv311/Scripts/python -m apps.api.src.services.nlp.run_worker
 ```
 
+Chunk metadata backfill helper (when DB is running):
+
+```bash
+.venv311/Scripts/python -m apps.api.src.services.nlp.backfill_chunk_metadata --limit 50 --offset 0
+```
+
+Repeat with increasing `--offset` for resumable batch processing.
+
 NLP stack used in worker:
 
 - `langdetect` for language detection
 - `spacy` (French blank pipeline + sentencizer) for sentence boundary chunking
 - `deep-translator` (`GoogleTranslator`) for FR→EN chunk translation
-- Hugging Face Router chat completion for metadata adjudication (rules + LLM hybrid)
+- LangChain + Groq chat completion for metadata adjudication (rules + LLM hybrid)
 
 Notes about API keys/services:
 
@@ -224,8 +232,8 @@ Notes about API keys/services:
 - `deep-translator` GoogleTranslator uses a free web translation backend (no project API key configured in current implementation)
 - Metadata extraction runs in hybrid mode:
   - rule-based candidates are generated first
-  - if `HF_TOKEN` is configured, Hugging Face model selects/refines best metadata by context
-  - if HF request fails, worker falls back to rule-only metadata (no pipeline break)
+  - if `GROQ_API_KEY` is configured, Groq model selects/refines best metadata by context
+  - if Groq request fails, worker falls back to rule-only metadata (no pipeline break)
 - For production stability, you may later switch translation to a paid API-backed provider
 
 How OCR source is resolved:
@@ -241,7 +249,7 @@ Pipeline events used now:
 
 ### Embedding Worker (Track A)
 
-Track A embedding worker consumes `nlp_completed`, generates vectors via Hugging Face BGE-M3, writes embeddings to pgvector column in `chunks`, and publishes `embedding_complete`.
+Track A embedding worker consumes `nlp_completed`, generates vectors via LangChain HuggingFace endpoint embeddings (model default `BAAI/bge-m3`), writes embeddings to pgvector column in `chunks`, and publishes `embedding_complete`.
 
 Run embedding worker:
 
@@ -258,8 +266,7 @@ Embedding defaults:
 Required/optional env vars in `apps/api/.env`:
 
 - `HF_TOKEN` (required)
-- `HF_EMBEDDING_MODEL` (optional override, default `BAAI/bge-m3`)
-- `HF_EMBEDDING_API_URL` (optional explicit endpoint override)
+- `LANGCHAIN_EMBEDDING_MODEL` (optional override, default `BAAI/bge-m3`)
 
 Worker status transitions:
 
