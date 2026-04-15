@@ -60,14 +60,27 @@ async def rag_query(
         context = "\n\n---\n\n".join(context_parts)
 
         try:
-            from ..services.llm.client import generate_response
+            from ..services.llm.client import _load_langchain_groq_chat_model
+            from langchain_core.messages import SystemMessage, HumanMessage
 
-            answer = generate_response(
-                query=query,
-                context=context,
+            chat_model = _load_langchain_groq_chat_model(
+                model="llama-3.3-70b-versatile",
                 temperature=0.3,
                 max_tokens=800,
             )
+
+            qa_response = chat_model.invoke(
+                [
+                    SystemMessage(
+                        content="You are a helpful assistant answering questions about tender documents. Based ONLY on the provided excerpts, answer the user's question concisely and accurately. If the excerpts don't contain the answer, say so clearly. Do not make up information."
+                    ),
+                    HumanMessage(
+                        content=f"Excerpts:\n{context}\n\nQuestion: {query}\n\nAnswer:"
+                    ),
+                ]
+            )
+            raw = getattr(qa_response, "content", "") or ""
+            answer = str(raw).strip() if raw else "Could not generate an answer."
             sources = [
                 {
                     "page": chunk.get("page_number", 0) or 0,
