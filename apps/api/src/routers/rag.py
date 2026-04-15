@@ -32,7 +32,9 @@ async def rag_query(
         raise HTTPException(status_code=400, detail="query is required")
 
     if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required")
+        tenant_id = str(payload.get("tenant_id", ""))
+    if not tenant_id:
+        tenant_id = "00000000-0000-0000-0000-000000000001"
 
     document = document_repository.get_document(document_id, tenant_id)
     if document is None:
@@ -47,9 +49,44 @@ async def rag_query(
         top_k=top_k,
     )
 
+    answer = "No relevant information found in the document for this query."
+    sources = []
+    if chunks:
+        context_parts: list[str] = []
+        for i, chunk in enumerate(chunks):
+            content = str(chunk.get("content_translated") or chunk.get("content", ""))
+            position = chunk.get("position", i)
+            context_parts.append(f"[Excerpt {i + 1} - Position {position}]:\n{content}")
+        context = "\n\n---\n\n".join(context_parts)
+
+        try:
+            from ..services.llm.client import generate_response
+
+            answer = generate_response(
+                query=query,
+                context=context,
+                temperature=0.3,
+                max_tokens=800,
+            )
+            sources = [
+                {
+                    "page": chunk.get("page_number", 0) or 0,
+                    "section": f"Position {chunk.get('position', i)}",
+                    "excerpt": (
+                        chunk.get("content_translated") or chunk.get("content", "")
+                    )[:200],
+                    "relevance": float(chunk.get("similarity", 0.0)),
+                }
+                for chunk in chunks
+            ]
+        except Exception as e:
+            answer = f"Found {len(chunks)} relevant excerpts but could not generate an answer: {e}"
+
     return {
         "document_id": document_id,
         "query": query,
+        "answer": answer,
+        "sources": sources,
         "results": chunks,
         "total_results": len(chunks),
     }

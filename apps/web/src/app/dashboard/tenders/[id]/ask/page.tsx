@@ -26,7 +26,7 @@ export default function AskPage({
     const fetchHistory = async () => {
       try {
         const history = await getRAGHistory(id);
-        setMessages(history);
+        setMessages(Array.isArray(history) ? history : (history as { messages: RAGMessage[] }).messages || []);
       } catch (err) {
         console.error("Failed to load chat history:", err);
       } finally {
