@@ -1,286 +1,80 @@
-const defaultApiBaseUrl = "http://localhost:8100";
+import { getApiBaseUrl } from "@/lib/utils";
+import type { PaginatedResponse, APIError } from "@/types";
 
-export type UploadedDocument = {
-  id: string;
-  tenant_id?: string;
-  filename: string;
-  size_bytes: number;
-  content_type: string;
-  created_at: string;
-  status: string;
-};
-
-export type RagSearchResult = {
-  id: string;
-  document_id: string;
-  content: string;
-  content_translated: string | null;
-  position: number;
-  page_number?: number | null;
-  similarity: number;
-};
-
-export type RagQueryResponse = {
-  document_id: string;
-  query: string;
-  results: RagSearchResult[];
-  total_results: number;
-};
-
-export type GeneratedResponse = {
-  id: string;
-  document_id: string;
-  content: string;
-  citations: Record<string, unknown> | null;
-  artifact_path?: string;
-  created_at: string;
-};
-
-export type ExportResponse = {
-  export_id: string;
-  document_id: string;
-  response_id: string;
-  format: string;
-  file_path: string;
-  status: string;
-  download_url: string;
-};
-
-export type OcrArtifact = {
-  document_id: string;
-  tenant_id: string;
-  filename: string;
-  model: string;
-  table_format: string;
-  text: string;
-  pages: Array<{
-    page_index: number;
-    markdown: string;
-    images: unknown[];
-    dimensions: Record<string, unknown> | null;
-    raw: Record<string, unknown>;
-  }>;
-  raw_response: Record<string, unknown>;
-};
-
-export type ProcessingStage =
-  | "uploaded"
-  | "ocr_processing"
-  | "ocr_complete"
-  | "nlp_completed"
-  | "embedding_complete"
-  | "ocr_failed";
-
-const statusOrder: ProcessingStage[] = [
-  "uploaded",
-  "ocr_processing",
-  "ocr_complete",
-  "nlp_completed",
-  "embedding_complete",
-];
-
-export function getStatusProgress(status: string): number {
-  if (status === "ocr_failed") {
-    return 100;
-  }
-  const index = statusOrder.findIndex((item) => item === status);
-  if (index < 0) {
-    return 0;
-  }
-  return Math.round(((index + 1) / statusOrder.length) * 100);
+interface FetchOptions extends RequestInit {
+  params?: Record<string, string | number | undefined>;
 }
 
-export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? defaultApiBaseUrl;
-}
-
-
-export function getApiWebSocketBaseUrl(): string {
-  const apiBase = getApiBaseUrl();
-  if (apiBase.startsWith("https://")) {
-    return `wss://${apiBase.slice("https://".length)}`;
-  }
-  if (apiBase.startsWith("http://")) {
-    return `ws://${apiBase.slice("http://".length)}`;
-  }
-  return `ws://${apiBase}`;
-}
-
-export async function fetchApiHealth(): Promise<{ status: string }> {
-  const response = await fetch(`${getApiBaseUrl()}/health`, {
-    method: "GET",
-    cache: "no-store",
-  });
-
+async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`API health request failed with status ${response.status}`);
+    const error: APIError = await response.json().catch(() => ({
+      detail: `HTTP ${response.status}: ${response.statusText}`,
+      status_code: response.status,
+    }));
+    throw new Error(error.detail);
   }
-
-  const data = (await response.json()) as { status: string };
-  return data;
+  return response.json();
 }
 
-export async function uploadDocument(file: File): Promise<UploadedDocument> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents`, {
-    method: "POST",
-    body: formData,
-  });
-
-  const payload = (await response.json()) as {
-    detail?: string;
-    document?: UploadedDocument;
-  };
-
-  if (!response.ok || !payload.document) {
-    throw new Error(payload.detail ?? "Upload failed");
+function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
+  const url = new URL(`${getApiBaseUrl()}${path}`);
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        url.searchParams.append(key, String(value));
+      }
+    });
   }
-
-  return payload.document;
+  return url.toString();
 }
 
-export async function fetchDocuments(): Promise<UploadedDocument[]> {
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents`, {
-    method: "GET",
-    cache: "no-store",
-  });
+export const api = {
+  async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+    const response = await fetch(buildUrl(path, params), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return handleResponse<T>(response);
+  },
 
-  const payload = (await response.json()) as {
-    detail?: string;
-    items?: UploadedDocument[];
-  };
+  async post<T>(path: string, body?: unknown): Promise<T> {
+    const response = await fetch(buildUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return handleResponse<T>(response);
+  },
 
-  if (!response.ok || !payload.items) {
-    throw new Error(payload.detail ?? "Failed to load documents");
-  }
+  async put<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(buildUrl(path), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+  },
 
-  return payload.items;
-}
+  async delete<T>(path: string): Promise<T> {
+    const response = await fetch(buildUrl(path), {
+      method: 'DELETE',
+    });
+    return handleResponse<T>(response);
+  },
 
-export async function deleteDocument(documentId: string): Promise<void> {
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents/${documentId}`, {
-    method: "DELETE",
-  });
-
-  if (response.ok) {
-    return;
-  }
-
-  const payload = (await response.json()) as {
-    detail?: string;
-  };
-
-  throw new Error(payload.detail ?? "Failed to delete document");
-}
-
-export async function fetchDocumentOcrArtifact(documentId: string): Promise<OcrArtifact> {
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents/${documentId}/ocr-artifact`, {
-    method: "GET",
-    cache: "no-store",
-  });
-
-  const payload = (await response.json()) as {
-    detail?: string;
-    artifact?: OcrArtifact;
-  };
-
-  if (!response.ok || !payload.artifact) {
-    throw new Error(payload.detail ?? "Failed to load OCR artifact");
-  }
-
-  return payload.artifact;
-}
-
-export type MessagingStatus = {
-  rabbitmq: {
-    connected: boolean;
-    detail: string;
-  };
-  topology: {
-    exchange: string;
-    exchange_type: string;
-    queues: {
-      ocr: string;
-      nlp: string;
-      embedding: string;
-      compliance: string;
-    };
-    event_flow: string[];
-  };
+  async upload<T>(path: string, formData: FormData): Promise<T> {
+    const response = await fetch(buildUrl(path), {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse<T>(response);
+  },
 };
 
-export async function fetchMessagingStatus(): Promise<MessagingStatus> {
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/system/messaging`, {
-    method: "GET",
-    cache: "no-store",
-  });
-
-  const payload = (await response.json()) as MessagingStatus & {
-    detail?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(payload.detail ?? "Failed to load messaging status");
-  }
-
-  return payload;
-}
-
-export async function ragQuery(documentId: string, query: string, topK = 5): Promise<RagQueryResponse> {
-  const tenantId = "00000000-0000-0000-0000-000000000001";
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/rag/query?tenant_id=${tenantId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    cache: "no-store",
-    body: JSON.stringify({ document_id: documentId, query, top_k: topK }),
-  });
-
-  const payload = (await response.json()) as RagQueryResponse & { detail?: string };
-  if (!response.ok) {
-    throw new Error(payload.detail ?? "RAG query failed");
-  }
-  return payload;
-}
-
-export async function generateTenderResponse(documentId: string, query: string): Promise<GeneratedResponse> {
-  const tenantId = "00000000-0000-0000-0000-000000000001";
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/generate/response?tenant_id=${tenantId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    cache: "no-store",
-    body: JSON.stringify({ document_id: documentId, query }),
-  });
-
-  const payload = (await response.json()) as GeneratedResponse & { detail?: string };
-  if (!response.ok) {
-    throw new Error(payload.detail ?? "Generation failed");
-  }
-  return payload;
-}
-
-export async function exportGeneratedResponse(documentId: string, responseId: string): Promise<ExportResponse> {
-  const tenantId = "00000000-0000-0000-0000-000000000001";
-  const response = await fetch(`${getApiBaseUrl()}/api/v1/documents/${documentId}/export?tenant_id=${tenantId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    cache: "no-store",
-    body: JSON.stringify({ response_id: responseId, format: "docx" }),
-  });
-
-  const payload = (await response.json()) as ExportResponse & { detail?: string };
-  if (!response.ok) {
-    throw new Error(payload.detail ?? "Export failed");
-  }
-  return payload;
-}
+export * from './tenders';
+export * from './compliance';
+export * from './rag';
+export * from './responses';
+export * from './exports';
+export * from './company';
+export * from './system';

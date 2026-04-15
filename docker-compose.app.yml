@@ -1,0 +1,61 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: p2m-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+
+  redis:
+    image: redis:7-alpine
+    container_name: p2m-redis
+    restart: unless-stopped
+    ports:
+      - "6400:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: p2m-api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      API_ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/%2F
+      REDIS_URL: redis://redis:6379/0
+      WEB_BASE_URL: http://web:3000
+    ports:
+      - "8100:8100"
+    depends_on:
+      - rabbitmq
+      - redis
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://api:8100/api/v1
+    container_name: p2m-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8100/api/v1
+      API_URL: http://api:8100/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  rabbit_data:
+  redis_data:

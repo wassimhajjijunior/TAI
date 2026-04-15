@@ -1,24 +1,15 @@
-from typing import Any
-
+from fastapi import HTTPException
 
 RAG_ENDPOINTS = [
     "POST /api/v1/rag/query",
+    "GET /api/v1/documents/{id}/rag/history",
+    "DELETE /api/v1/documents/{id}/rag/history",
 ]
 
 
 async def rag_query(
     payload: dict[str, object], tenant_id: str | None = None
 ) -> dict[str, object]:
-    """Query similar chunks using RAG.
-
-    Args:
-        payload: Request body with document_id, query, and optional top_k
-        tenant_id: Tenant ID for the request
-
-    Returns:
-        List of similar chunks with scores
-    """
-    from importlib import import_module
     from ..core import document_repository
     from ..services.embedding.hf_client import request_embeddings
     from ..services.rag.client import search_similar_chunks
@@ -35,24 +26,16 @@ async def rag_query(
     top_k = max(1, min(top_k, 20))
 
     if not document_id:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="document_id is required")
 
     if not query:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="query is required")
 
     if not tenant_id:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="tenant_id is required")
 
     document = document_repository.get_document(document_id, tenant_id)
     if document is None:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=404, detail="Document not found")
 
     query_embeddings = request_embeddings([query])
@@ -72,6 +55,16 @@ async def rag_query(
     }
 
 
+def get_rag_history(document_id: str) -> dict[str, list[dict[str, object]]]:
+    return {"messages": []}
+
+
+def clear_rag_history(document_id: str) -> dict[str, str]:
+    return {"status": "cleared"}
+
+
 RAG_ROUTES = [
     ("POST", "/rag/query", rag_query),
+    ("GET", "/documents/{document_id}/rag/history", get_rag_history),
+    ("DELETE", "/documents/{document_id}/rag/history", clear_rag_history),
 ]

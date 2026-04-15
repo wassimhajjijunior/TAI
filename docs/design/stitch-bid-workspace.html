@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Document Detail Workspace | Sovereign Bid Assistant</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed-variant": "#003ea8",
+                        "primary-fixed-dim": "#b4c5ff",
+                        "surface-tint": "#0053db",
+                        "on-background": "#131b2e",
+                        "surface-dim": "#d2d9f4",
+                        "on-surface-variant": "#434655",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-container": "#dae2fd",
+                        "error": "#ba1a1a",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "on-secondary-container": "#5c647a",
+                        "outline": "#737686",
+                        "on-error-container": "#93000a",
+                        "surface-container-low": "#f2f3ff",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-tertiary-fixed": "#002113",
+                        "surface-container-highest": "#dae2fd",
+                        "on-surface": "#131b2e",
+                        "primary-container": "#2563eb",
+                        "on-primary-container": "#eeefff",
+                        "secondary-fixed-dim": "#bec6e0",
+                        "outline-variant": "#c3c6d7",
+                        "secondary": "#565e74",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#e2e7ff",
+                        "on-primary-fixed": "#00174b",
+                        "on-secondary-fixed-variant": "#3f465c",
+                        "on-tertiary": "#ffffff",
+                        "background": "#faf8ff",
+                        "secondary-fixed": "#dae2fd",
+                        "primary": "#004ac6",
+                        "primary-fixed": "#dbe1ff",
+                        "inverse-on-surface": "#eef0ff",
+                        "error-container": "#ffdad6",
+                        "tertiary-container": "#007d55",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#6ffbbe",
+                        "inverse-surface": "#283044",
+                        "surface": "#faf8ff",
+                        "surface-container": "#eaedff",
+                        "surface-bright": "#faf8ff",
+                        "tertiary": "#006242",
+                        "on-tertiary-container": "#bdffdb",
+                        "surface-variant": "#dae2fd",
+                        "inverse-primary": "#b4c5ff",
+                        "on-secondary-fixed": "#131b2e",
+                        "on-error": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .headline-font { font-family: 'Manrope', sans-serif; }
+        .glass-panel {
+            background: rgba(218, 226, 253, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .ambient-glow {
+            box-shadow: 0 40px 60px -15px rgba(19, 27, 46, 0.06);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex">
+<!-- SideNavBar -->
+<aside class="h-screen w-72 flex-shrink-0 sticky left-0 overflow-y-auto bg-[#FAF8FF] dark:bg-[#131B2E] border-r border-[#434655]/15 flex flex-col gap-2 p-6 h-full">
+<div class="mb-8">
+<h1 class="text-lg font-black text-[#131B2E] dark:text-[#FAF8FF] headline-font tracking-tighter">Enterprise Procurement</h1>
+<p class="text-xs text-on-surface-variant font-medium">High-Stakes AI Tendering</p>
+</div>
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 text-[#434655] dark:text-slate-400 hover:text-[#131B2E] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 bg-white dark:bg-[#1e293b] text-[#004AC6] dark:text-[#2563EB] font-semibold rounded-lg shadow-sm shadow-[#131B2E]/5 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+                Tender Library
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#434655] dark:text-slate-400 hover:text-[#131B2E] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Document Analyzer
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#434655] dark:text-slate-400 hover:text-[#131B2E] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">fact_check</span>
+                Compliance Matrix
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#434655] dark:text-slate-400 hover:text-[#131B2E] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">edit_note</span>
+                Response Editor
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#434655] dark:text-slate-400 hover:text-[#131B2E] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 font-['Inter'] text-sm font-medium tracking-normal scale-[0.98] active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined">groups</span>
+                Team Collab
+            </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-outline-variant/15 flex flex-col gap-1">
+<button class="mb-4 w-full bg-gradient-to-r from-primary to-primary-container text-white py-3 rounded-xl font-bold text-sm shadow-md transition-transform active:scale-95">
+                New Tender Request
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-[#434655] dark:text-slate-400 text-sm" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+                Help Center
+            </a>
+<a class="flex items-center gap-3 px-4 py-2 text-[#434655] dark:text-slate-400 text-sm" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Log Out
+            </a>
+</div>
+</aside>
+<main class="flex-1 flex flex-col min-h-screen">
+<!-- TopNavBar -->
+<header class="w-full sticky top-0 z-50 bg-[#FAF8FF] dark:bg-[#131B2E] border-b border-[#434655]/15 flex justify-between items-center h-16 px-8 w-full">
+<div class="flex items-center gap-8">
+<div class="text-xl font-bold tracking-tighter text-[#131B2E] dark:text-[#FAF8FF] headline-font">Sovereign Bid Assistant</div>
+<nav class="hidden md:flex gap-6">
+<a class="text-[#434655] dark:text-slate-400 font-['Manrope'] font-semibold tracking-tight text-sm hover:bg-[#f1f5f9] dark:hover:bg-[#1e293b] transition-colors px-2 py-1" href="#">Global Search</a>
+<a class="text-[#004AC6] font-bold border-b-2 border-[#004AC6] font-['Manrope'] font-semibold tracking-tight text-sm px-2 py-1" href="#">Service Status</a>
+<a class="text-[#434655] dark:text-slate-400 font-['Manrope'] font-semibold tracking-tight text-sm hover:bg-[#f1f5f9] dark:hover:bg-[#1e293b] transition-colors px-2 py-1" href="#">Audit Logs</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2 mr-4">
+<span class="material-symbols-outlined p-2 text-on-surface-variant cursor-pointer hover:bg-surface-container-low rounded-full">notifications_active</span>
+<span class="material-symbols-outlined p-2 text-on-surface-variant cursor-pointer hover:bg-surface-container-low rounded-full">settings</span>
+<span class="material-symbols-outlined p-2 text-on-surface-variant cursor-pointer hover:bg-surface-container-low rounded-full">account_circle</span>
+</div>
+<button class="bg-gradient-to-r from-primary to-primary-container text-white px-5 py-2 rounded-xl font-bold text-sm">Approve Tender</button>
+</div>
+</header>
+<!-- Document Header Area -->
+<div class="px-10 py-8 bg-surface-container-low">
+<div class="flex justify-between items-end">
+<div>
+<div class="flex items-center gap-2 text-on-surface-variant text-xs mb-2 font-medium">
+<span>Tender Library</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-primary">GSA-772-Infrastructure-v4.pdf</span>
+</div>
+<h2 class="text-3xl font-extrabold headline-font tracking-tight text-on-surface">GSA Smart City Infrastructure</h2>
+<p class="text-on-surface-variant body-md mt-1">Strategic RFP Response &amp; Compliance Analysis</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 bg-surface-container-highest text-primary font-semibold rounded-xl text-sm transition-all active:scale-95">Download PDF</button>
+<button class="px-4 py-2 bg-gradient-to-r from-primary to-primary-container text-white font-bold rounded-xl text-sm shadow-md transition-all active:scale-95">Finalize Response</button>
+</div>
+</div>
+<!-- Tabs Interface -->
+<div class="mt-8 flex border-b border-outline-variant/20">
+<button class="px-6 py-3 text-sm font-bold border-b-2 border-primary text-primary">Overview</button>
+<button class="px-6 py-3 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors">Compliance</button>
+<button class="px-6 py-3 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors">RAG Query</button>
+<button class="px-6 py-3 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors">History</button>
+</div>
+</div>
+<!-- Tab Content: Overview -->
+<div class="px-10 py-8 flex flex-col gap-8">
+<!-- Bento Grid Overview -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Metadata Card -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-lowest p-6 rounded-xl ambient-glow">
+<div class="flex justify-between items-center mb-6">
+<h3 class="headline-font text-lg font-bold">Metadata &amp; Extraction Details</h3>
+<span class="material-symbols-outlined text-outline">more_horiz</span>
+</div>
+<div class="grid grid-cols-3 gap-8">
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">File Status</p>
+<p class="text-sm font-semibold flex items-center gap-1.5 text-on-surface">
+<span class="w-2 h-2 rounded-full bg-tertiary-fixed"></span> Processed
+                            </p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Submission Date</p>
+<p class="text-sm font-semibold text-on-surface">Oct 24, 2023</p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Page Count</p>
+<p class="text-sm font-semibold text-on-surface">142 Pages</p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Risk Rating</p>
+<p class="text-sm font-semibold text-error">Moderate (High Stake)</p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Primary Authority</p>
+<p class="text-sm font-semibold text-on-surface">GSA Region 4</p>
+</div>
+<div class="space-y-1">
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Reference Number</p>
+<p class="text-sm font-semibold text-on-surface">#ARCH-8821-X</p>
+</div>
+</div>
+<!-- File Details List -->
+<div class="mt-8 pt-6 border-t border-surface-container-low">
+<div class="flex flex-col gap-4">
+<div class="flex justify-between items-center p-3 hover:bg-surface-container-low transition-colors rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary/5 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">description</span>
+</div>
+<div>
+<p class="text-sm font-bold">Base RFP Document</p>
+<p class="text-xs text-on-surface-variant">42.4 MB • PDF • Vectorized</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline cursor-pointer">download</span>
+</div>
+<div class="flex justify-between items-center p-3 hover:bg-surface-container-low transition-colors rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-tertiary-container/10 flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined">table_chart</span>
+</div>
+<div>
+<p class="text-sm font-bold">Extracted Requirements.xlsx</p>
+<p class="text-xs text-on-surface-variant">1.2 MB • XLSX • AI Generated</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline cursor-pointer">download</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Processing Status Stepper -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-lowest p-6 rounded-xl ambient-glow">
+<h3 class="headline-font text-lg font-bold mb-8">AI Pipeline Status</h3>
+<div class="relative">
+<!-- Connecting Line -->
+<div class="absolute left-[9px] top-1 bottom-1 w-[2px] bg-surface-container-high"></div>
+<div class="absolute left-[9px] top-1 h-[65%] w-[2px] bg-primary"></div>
+<div class="space-y-8 relative">
+<!-- Step 1 -->
+<div class="flex gap-4">
+<div class="relative z-10 w-5 h-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-white">
+<span class="material-symbols-outlined text-white text-[12px] font-bold">check</span>
+</div>
+<div>
+<p class="text-sm font-bold text-on-surface leading-none">Document Reading</p>
+<p class="text-xs text-on-surface-variant mt-1">Completed 2h ago</p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="flex gap-4">
+<div class="relative z-10 w-5 h-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-white">
+<span class="material-symbols-outlined text-white text-[12px] font-bold">check</span>
+</div>
+<div>
+<p class="text-sm font-bold text-on-surface leading-none">Smart Search Indexing</p>
+<p class="text-xs text-on-surface-variant mt-1">Completed 1.5h ago</p>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="flex gap-4">
+<div class="relative z-10 w-5 h-5 rounded-full bg-surface-container-high border-2 border-primary flex items-center justify-center ring-4 ring-white">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+<div>
+<p class="text-sm font-bold text-on-surface leading-none">Qualification Check</p>
+<p class="text-xs text-primary font-medium mt-1">In Progress (84%)</p>
+</div>
+</div>
+<!-- Step 4 -->
+<div class="flex gap-4">
+<div class="relative z-10 w-5 h-5 rounded-full bg-surface-container-high flex items-center justify-center ring-4 ring-white">
+</div>
+<div>
+<p class="text-sm font-bold text-outline leading-none">Drafting Response</p>
+<p class="text-xs text-on-surface-variant mt-1">Awaiting review</p>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-10 p-4 rounded-xl glass-panel">
+<p class="text-xs font-bold text-primary flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-[16px]">info</span>
+                            AI REASONING LOG
+                        </p>
+<p class="text-xs leading-relaxed text-on-surface-variant">
+                            "Found 12 critical dependencies in Section 4.2. High probability of resource conflict detected in vendor clauses..."
+                        </p>
+</div>
+</div>
+</div>
+<!-- Section 2: Compliance Focus -->
+<div class="bg-surface-container-low rounded-2xl p-8">
+<div class="flex flex-col md:flex-row gap-8 items-start">
+<!-- Gauge and Recommendation -->
+<div class="w-full md:w-1/3 flex flex-col gap-6">
+<div class="bg-surface-container-lowest p-6 rounded-xl ambient-glow text-center">
+<p class="text-xs font-bold text-outline uppercase tracking-widest mb-4">Eligibility Score</p>
+<div class="relative w-32 h-32 mx-auto mb-4">
+<svg class="w-full h-full transform -rotate-90">
+<circle class="text-surface-container-high" cx="64" cy="64" fill="transparent" r="58" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary" cx="64" cy="64" fill="transparent" r="58" stroke="currentColor" stroke-dasharray="364.4" stroke-dashoffset="40" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-3xl font-black headline-font">89%</span>
+<span class="text-[10px] text-on-surface-variant font-bold">READY</span>
+</div>
+</div>
+<div class="px-4 py-2 bg-tertiary-container/30 rounded-full inline-flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[18px]">verified</span>
+<span class="text-xs font-bold text-tertiary">Proceed to Bid</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl ambient-glow">
+<h4 class="text-sm font-bold mb-3">AI Recommendation</h4>
+<p class="text-xs leading-relaxed text-on-surface-variant mb-4">
+                                Based on previous 2022 GSA awards, your organization matches 94% of historical tech stack requirements. Minor gap found in Cybersecurity Section 8.1.
+                            </p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold rounded">GO/NO-GO: GO</span>
+<span class="px-2 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold rounded">CONFIDENCE: 92%</span>
+</div>
+</div>
+</div>
+<!-- Requirements Table -->
+<div class="w-full md:w-2/3 bg-surface-container-lowest rounded-xl ambient-glow overflow-hidden">
+<div class="px-6 py-4 border-b border-surface-container-low flex justify-between items-center">
+<h3 class="headline-font text-md font-bold">Extracted Requirements Matrix</h3>
+<button class="text-primary text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+                                Filter Unmet
+                            </button>
+</div>
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low">
+<th class="px-6 py-3 text-[10px] font-bold text-outline tracking-wider uppercase">Tender Clause</th>
+<th class="px-6 py-3 text-[10px] font-bold text-outline tracking-wider uppercase">Requirement</th>
+<th class="px-6 py-3 text-[10px] font-bold text-outline tracking-wider uppercase">Status</th>
+<th class="px-6 py-3 text-[10px] font-bold text-outline tracking-wider uppercase">Evidence</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low">
+<tr class="hover:bg-surface/50">
+<td class="px-6 py-4 text-xs font-bold">Sec 4.2.1</td>
+<td class="px-6 py-4 text-xs text-on-surface-variant">Cloud-native infrastructure with 99.9% uptime SLA guarantee.</td>
+<td class="px-6 py-4">
+<span class="px-3 py-1 bg-tertiary-container text-tertiary font-bold text-[10px] rounded-full uppercase">Met</span>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-outline text-[18px] cursor-pointer">link</span>
+</td>
+</tr>
+<tr class="hover:bg-surface/50">
+<td class="px-6 py-4 text-xs font-bold">Sec 8.1.0</td>
+<td class="px-6 py-4 text-xs text-on-surface-variant">FedRAMP High authorization certification within 6 months of start.</td>
+<td class="px-6 py-4">
+<span class="px-3 py-1 bg-error-container text-error font-bold text-[10px] rounded-full uppercase">Review</span>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-error text-[18px] cursor-pointer">warning</span>
+</td>
+</tr>
+<tr class="hover:bg-surface/50">
+<td class="px-6 py-4 text-xs font-bold">Sec 12.3</td>
+<td class="px-6 py-4 text-xs text-on-surface-variant">24/7 localized technical support across all 4 time zones.</td>
+<td class="px-6 py-4">
+<span class="px-3 py-1 bg-tertiary-container text-tertiary font-bold text-[10px] rounded-full uppercase">Met</span>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-outline text-[18px] cursor-pointer">link</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Section 3: RAG Query Workspace -->
+<div class="grid grid-cols-12 h-[600px] gap-6">
+<!-- Chat Interface -->
+<div class="col-span-12 lg:col-span-7 bg-surface-container-lowest rounded-xl ambient-glow flex flex-col">
+<div class="px-6 py-4 border-b border-surface-container-low">
+<h3 class="headline-font text-md font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">auto_awesome</span>
+                            Smart Search (Ask the Bid)
+                        </h3>
+</div>
+<div class="flex-1 p-6 overflow-y-auto space-y-6">
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">account_circle</span>
+</div>
+<div class="bg-surface-container-low p-4 rounded-2xl rounded-tl-none max-w-[85%]">
+<p class="text-sm">What are the specific requirements for localized data hosting in this RFP?</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-white text-[18px]">smart_toy</span>
+</div>
+<div class="bg-primary/5 border border-primary/10 p-4 rounded-2xl rounded-tl-none max-w-[85%]">
+<p class="text-sm text-on-surface mb-3 leading-relaxed">
+                                    Section 9.4 (Page 88) explicitly states that all PII (Personally Identifiable Information) must remain within the continental United States. Furthermore:
+                                </p>
+<ul class="text-xs space-y-2 list-disc list-inside text-on-surface-variant">
+<li>Physical data centers must be Tier 3 certified.</li>
+<li>Data at rest must use AES-256 encryption.</li>
+</ul>
+<div class="mt-4 flex gap-2">
+<button class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded">Source: p.88, Sec 9.4</button>
+<button class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded">Source: p.92, Appx B</button>
+</div>
+</div>
+</div>
+</div>
+<div class="p-6 border-t border-surface-container-low">
+<div class="relative">
+<input class="w-full bg-surface-container-low border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary pr-24" placeholder="Ask anything about the document..." type="text"/>
+<div class="absolute right-2 top-1.5 flex gap-1">
+<button class="p-1.5 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<button class="bg-primary text-white p-1.5 rounded-lg">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Citations & Chunks -->
+<div class="col-span-12 lg:col-span-5 bg-surface-container-lowest rounded-xl ambient-glow overflow-hidden flex flex-col">
+<div class="px-6 py-4 border-b border-surface-container-low">
+<h3 class="headline-font text-md font-bold">Verified Source Material</h3>
+</div>
+<div class="flex-1 p-6 space-y-4 overflow-y-auto">
+<div class="p-4 border border-outline-variant/10 rounded-xl hover:border-primary/30 transition-colors cursor-pointer">
+<div class="flex justify-between items-center mb-2">
+<span class="text-[10px] font-black text-primary uppercase">VERIFIED</span>
+<span class="text-[10px] text-on-surface-variant">Relevance: 0.98</span>
+</div>
+<p class="text-xs italic text-on-surface-variant line-clamp-3">
+                                "...The contractor shall ensure that all data storage systems utilized for the execution of this contract reside within geographical boundaries of CONUS..."
+                            </p>
+</div>
+<div class="p-4 border border-outline-variant/10 rounded-xl hover:border-primary/30 transition-colors cursor-pointer">
+<div class="flex justify-between items-center mb-2">
+<span class="text-[10px] font-black text-primary uppercase">VERIFIED</span>
+<span class="text-[10px] text-on-surface-variant">Relevance: 0.84</span>
+</div>
+<p class="text-xs italic text-on-surface-variant line-clamp-3">
+                                "...redundancy requirements necessitate a secondary failover location separated by at least 100 miles from the primary node..."
+                            </p>
+</div>
+<div class="relative rounded-xl overflow-hidden h-40">
+<img class="w-full h-full object-cover" data-alt="professional document viewer showing technical diagram with high-tech dashboard elements and code snippets on screen" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeDce2W5Ig6X0OQUEwWMYuXJ4SkxCaAS7Nk75-qxCMD9Etw4Z2NQF_r5LPWlqVa2bGIjEv4Y9E2BuQvFDSn6_jO45aHy9enTXFY36tvYkjU24A32pMXQ0Rp8Yoa-6Y2j8Sh88CJC24whnFdRjTP_xssYf-Xj5NMwji3MaH_KnZeFSEZe2XFWvPgAFaI3mZ0nabWb952oqpwiGar467ZsP975MIwZslJ81q_aYA9rNa3AfqteY9f6zdC_UmLGjLnQn-oGWrHQe8W1w1"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4">
+<p class="text-[10px] font-bold text-white uppercase tracking-widest">Live Document Preview (p.88)</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 4: History & Artifacts -->
+<div class="bg-surface-container-lowest rounded-xl ambient-glow p-8 mb-10">
+<h3 class="headline-font text-lg font-bold mb-6">Draft History</h3>
+<div class="space-y-4">
+<div class="flex items-center justify-between p-4 bg-surface rounded-xl group border border-transparent hover:border-primary/20 transition-all">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">description</span>
+</div>
+<div>
+<h4 class="text-sm font-bold">Draft_Response_Technical_v2.docx</h4>
+<p class="text-xs text-on-surface-variant">Generated Oct 26 • Edited by Sarah Chen</p>
+</div>
+</div>
+<div class="flex gap-4 items-center">
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-white object-cover" data-alt="close up headshot of a professional man with glasses smiling" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBp29RIpf62X2m9SAHoUALxa830jLX9XCfJ__BnZiDhOxT9YxemXMKgzPEsXVihgWAMpQ_g6uAE35CUodNgEV6CWDwJ3nClgzQiHhu1HJRHyUnkn8pnt__KO9RevkO1zfGkXn-ktwvAqVo7p2E5K_OhKBISJdaP9u5PHiCmAcUWbG_M_PF7VJC206VEbbPyLJC7Gm6ppQ0QKdGSZ75WsbH7-7xjfBfKSXO3OFIueO8LKsgc8OR0fcMuYMv6IKzk-gcB0ILOpSwOIcka"/>
+<img class="w-6 h-6 rounded-full border-2 border-white object-cover" data-alt="close up headshot of a professional woman in a studio setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjsDlgc_TkysVmQ4a73Frzwph152-NWs2p5opCmsSWLjPRF1GsvDXvfnzv_-S-AEo5XBZIKBYeLSiuiDSUYO3ce7Ld6NUuYkCZlRH3XaRAdcnU4f-csJK35iGk2dqnrw189lXgfu1C1p3oYc1xdy66jeAvyWqAU7-zmJxxYIi0X1qbA_TkTqNkWD4sInJ2mB_lj40bNXdJp2u6dg6D87nkbCbPHmJNBPQKnQ06_PPPwEH_Gc4PY15Xa_WSuF1zpoQtvLT5sQjGRd6a"/>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">visibility</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">more_vert</button>
+</div>
+</div>
+<div class="flex items-center justify-between p-4 bg-surface rounded-xl group border border-transparent hover:border-primary/20 transition-all">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">picture_as_pdf</span>
+</div>
+<div>
+<h4 class="text-sm font-bold">Compliance_Report_Official.pdf</h4>
+<p class="text-xs text-on-surface-variant">Generated Oct 25 • Automated System Export</p>
+</div>
+</div>
+<div class="flex gap-4 items-center">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">visibility</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary">more_vert</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

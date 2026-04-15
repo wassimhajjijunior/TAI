@@ -1,25 +1,21 @@
+from fastapi import HTTPException
+from typing import cast
+
 GENERATE_ENDPOINTS = [
     "POST /api/v1/generate/response",
     "GET /api/v1/responses/{id}",
     "PATCH /api/v1/responses/{id}",
+    "GET /api/v1/documents/{id}/responses",
+    "POST /api/v1/documents/{id}/responses/generate",
+    "GET /api/v1/documents/{id}/responses/{response_id}",
+    "PUT /api/v1/documents/{id}/responses/{response_id}",
+    "DELETE /api/v1/documents/{id}/responses/{response_id}",
 ]
 
 
 async def generate_response(
     payload: dict[str, object], tenant_id: str | None = None
 ) -> dict[str, object]:
-    """Generate a tender response for a document.
-
-    Args:
-        payload: Request with document_id, query, and optional sections
-        tenant_id: Tenant ID for the request
-
-    Returns:
-        Generated response with citations
-    """
-    from importlib import import_module
-    from typing import cast
-
     from ..core import document_repository
     from ..services.llm.worker import process_generation_manual
 
@@ -30,19 +26,13 @@ async def generate_response(
     )
 
     if not document_id:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="document_id is required")
 
     if not tenant_id:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="tenant_id is required")
 
     document = document_repository.get_document(document_id, tenant_id)
     if document is None:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=404, detail="Document not found")
 
     valid_statuses = {
@@ -52,8 +42,6 @@ async def generate_response(
         "generation_ready",
     }
     if document.status not in valid_statuses:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(
             status_code=400,
             detail=f"Document not ready for generation. Current status: {document.status}",
@@ -70,15 +58,10 @@ async def generate_response(
 
 
 def get_response(response_id: str, tenant_id: str | None = None) -> dict[str, object]:
-    """Get a generated response by ID."""
-    from importlib import import_module
-
     from ..core import document_repository
 
     response = document_repository.get_response(response_id)
     if response is None:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=404, detail="Response not found")
 
     return {
@@ -94,52 +77,58 @@ def get_response(response_id: str, tenant_id: str | None = None) -> dict[str, ob
 def patch_response(
     response_id: str, payload: dict[str, object], tenant_id: str | None = None
 ) -> dict[str, object]:
-    """Update response content."""
-    from importlib import import_module
-
     from ..core import document_repository
 
     content = str(payload.get("content", ""))
     if not content:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="content is required")
 
     existing = document_repository.get_response(response_id)
     if existing is None:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=404, detail="Response not found")
 
     updated = document_repository.update_response(response_id, content)
     if not updated:
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=500, detail="Failed to update response")
 
     return get_response(response_id, tenant_id)
 
 
 def list_document_responses(
-    document_id: str, tenant_id: str | None = None
+    document_id: str,
+    tenant_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> dict[str, object]:
-    """List all responses for a document."""
     if not tenant_id:
-        from importlib import import_module
-
-        fastapi = import_module("fastapi")
-        HTTPException = getattr(fastapi, "HTTPException")
         raise HTTPException(status_code=400, detail="tenant_id is required")
 
     from ..core import document_repository
 
-    responses = document_repository.list_responses(document_id)
+    result = document_repository.list_responses(document_id, limit=limit, offset=offset)
 
     return {
         "document_id": document_id,
-        "responses": responses,
-        "total": len(responses),
+        "responses": result["items"],
+        "total": result["total"],
+        "limit": result["limit"],
+        "offset": result["offset"],
     }
+
+
+def delete_document_response(
+    document_id: str,
+    response_id: str,
+    tenant_id: str | None = None,
+) -> dict[str, str]:
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required")
+    from ..core import document_repository
+
+    deleted = document_repository.delete_response(response_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Response not found")
+    return {"status": "deleted", "id": response_id}
 
 
 GENERATE_ROUTES = [
@@ -147,4 +136,12 @@ GENERATE_ROUTES = [
     ("GET", "/responses/{response_id}", get_response),
     ("PATCH", "/responses/{response_id}", patch_response),
     ("GET", "/documents/{document_id}/responses", list_document_responses),
+    ("POST", "/documents/{document_id}/responses/generate", generate_response),
+    ("GET", "/documents/{document_id}/responses/{response_id}", get_response),
+    ("PUT", "/documents/{document_id}/responses/{response_id}", patch_response),
+    (
+        "DELETE",
+        "/documents/{document_id}/responses/{response_id}",
+        delete_document_response,
+    ),
 ]
