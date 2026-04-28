@@ -7,12 +7,11 @@ import {
   fetchDocumentOcrArtifact,
   fetchDocuments,
   fetchMessagingStatus,
-  getApiWebSocketBaseUrl,
-  getStatusProgress,
   uploadDocument,
   type MessagingStatus,
   type UploadedDocument,
 } from "@/lib/api/client";
+import { getApiWebSocketBaseUrl, getStatusProgress } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";

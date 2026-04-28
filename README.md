@@ -157,7 +157,7 @@ P2M-TAI/
 
 ```bash
 cd P2M-TAI
-docker compose -f docker-compose.app.yml up --build -d
+docker compose up --build -d
 ```
 
 ### Verify services
@@ -175,19 +175,19 @@ docker compose -f docker-compose.app.yml up --build -d
 
 ```bash
 # All containers
-docker compose -f docker-compose.app.yml logs
+docker compose logs
 
 # API only
-docker compose -f docker-compose.app.yml logs api
+docker compose logs api
 
 # Web only
-docker compose -f docker-compose.app.yml logs web
+docker compose logs web
 ```
 
 ### Stop the stack
 
 ```bash
-docker compose -f docker-compose.app.yml down
+docker compose down
 ```
 
 ---
@@ -221,8 +221,9 @@ cd apps/web
 npm install
 
 # Configure environment
-copy .env.example .env.local
+copy .env.local.example .env.local
 # Set NEXT_PUBLIC_API_URL=http://localhost:8100
+# For demo: NEXT_PUBLIC_MOCK_MODE=true
 
 npm run dev
 ```

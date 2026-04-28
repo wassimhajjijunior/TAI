@@ -12,6 +12,12 @@ const badgeVariants = cva(
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
         secondary:
           "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
+        success:
+          "bg-emerald-600/10 text-emerald-700 border border-emerald-600/20 dark:text-emerald-300",
+        info: "bg-blue-600/10 text-blue-700 border border-blue-600/20 dark:text-blue-300",
+        warning:
+          "bg-amber-500/10 text-amber-700 border border-amber-500/20 dark:text-amber-300",
+        error: "bg-red-600/10 text-red-700 border border-red-600/20 dark:text-red-300",
         destructive:
           "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
         outline:
@@ -30,14 +36,20 @@ const badgeVariants = cva(
 function Badge({
   className,
   variant = "default",
+  size = "default",
   render,
   ...props
-}: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
+}: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { size?: "default" | "sm" | "md" }) {
   return useRender({
     defaultTagName: "span",
     props: mergeProps<"span">(
       {
-        className: cn(badgeVariants({ variant }), className),
+        className: cn(
+          badgeVariants({ variant }),
+          size === "sm" ? "h-4 px-1.5 text-[10px]" : "",
+          size === "md" ? "h-6 px-2.5 text-xs" : "",
+          className
+        ),
       },
       props
     ),
