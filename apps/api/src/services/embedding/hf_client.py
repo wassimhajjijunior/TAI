@@ -11,6 +11,11 @@ def _load_langchain_hf_endpoint_embeddings_class():
   return getattr(module, "HuggingFaceEndpointEmbeddings")
 
 
+def _load_langchain_hf_embeddings_class():
+  module = import_module("langchain_huggingface")
+  return getattr(module, "HuggingFaceEmbeddings")
+
+
 def _embedding_model_name() -> str:
   return os.getenv("LANGCHAIN_EMBEDDING_MODEL", LANGCHAIN_DEFAULT_EMBEDDING_MODEL).strip() or LANGCHAIN_DEFAULT_EMBEDDING_MODEL
 
@@ -23,10 +28,12 @@ def _huggingface_token() -> str:
 def _resolve_embeddings_model() -> Any:
   load_local_env_if_present()
   token = _huggingface_token()
-  if not token:
-    raise RuntimeError("Missing required environment variable: HF_TOKEN")
-
   model_name = _embedding_model_name()
+
+  if not token:
+    EmbeddingsClass = _load_langchain_hf_embeddings_class()
+    return EmbeddingsClass(model_name=model_name)
+
   EndpointEmbeddingsClass = _load_langchain_hf_endpoint_embeddings_class()
   return EndpointEmbeddingsClass(
     model=model_name,

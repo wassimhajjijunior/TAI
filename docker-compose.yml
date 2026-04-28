@@ -1,0 +1,179 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbit-server
+    restart: unless-stopped
+    hostname: rmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-server
+    restart: unless-stopped
+    ports:
+      - "6400:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-api
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    ports:
+      - "8100:8100"
+    depends_on:
+      - rabbitmq
+
+  worker-ocr:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-ocr
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "ocr"]
+    depends_on:
+      - rabbitmq
+
+  worker-nlp:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-nlp
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "nlp"]
+    depends_on:
+      - rabbitmq
+
+  worker-embedding:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-embedding
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "embedding"]
+    depends_on:
+      - rabbitmq
+
+  worker-compliance:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-compliance
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "compliance"]
+    depends_on:
+      - rabbitmq
+
+  worker-notification:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-notification
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "notification"]
+    depends_on:
+      - rabbitmq
+
+  worker-rag:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-rag
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "rag"]
+    depends_on:
+      - rabbitmq
+
+  worker-llm:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-llm
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "llm"]
+    depends_on:
+      - rabbitmq
+
+  worker-export:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: p2m-worker-export
+    restart: unless-stopped
+    env_file:
+      - apps/api/.env
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:8000}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/%2F}
+    command: ["sh", "/app/apps/api/scripts/run_worker.sh", "export"]
+    depends_on:
+      - rabbitmq
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: p2m-web
+    restart: unless-stopped
+    env_file:
+      - apps/web/.env.example
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8100}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  rabbit_data:
+  redis_data:

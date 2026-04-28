@@ -170,6 +170,27 @@ Services:
 docker compose -f infra/docker/supabase-local/docker-compose.yml up -d
 ```
 
+### One-command full project (API + Web + workers + messaging)
+
+From repository root:
+
+```bash
+docker compose up -d --build
+```
+
+This starts:
+
+- API: `http://localhost:8100`
+- Web: `http://localhost:3000`
+- RabbitMQ: `localhost:5672`, UI `http://localhost:15672`
+- Redis: `localhost:6400`
+- All workers (OCR, NLP, embedding, compliance, notification, rag, llm, export)
+
+Prerequisites before running the one-command stack:
+
+- Local Supabase services are running and reachable on `http://host.docker.internal:8000` from Docker containers.
+- `apps/api/.env` exists and is filled.
+
 ---
 
 ## 7) Current Feature Status (Important)

@@ -1,0 +1,11 @@
+.git
+node_modules
+**/node_modules
+.venv311
+**/__pycache__
+**/.next
+**/.turbo
+*.log
+apps/api/storage
+apps/web/.env.local
+apps/api/.env
