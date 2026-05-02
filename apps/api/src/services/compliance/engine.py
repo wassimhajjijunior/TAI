@@ -1,8 +1,11 @@
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from ...core import document_repository
+from ...core.pipeline_events import EVENT_COMPLIANCE_COMPLETED, build_event
+from ...core.rabbitmq import publish_event
 
 
 
@@ -287,3 +290,30 @@ def process_embedding_complete(event_payload: dict[str, Any]) -> None:
   )
 
   _ = document_repository.update_document_status(document_id, tenant_id, "compliance_completed")
+
+  metadata = document.metadata if isinstance(document.metadata, dict) else {}
+  budget_raw = metadata.get("budget")
+  budget_entry: dict[str, object] = budget_raw if isinstance(budget_raw, dict) else {}
+  deadline_raw = metadata.get("deadline")
+  deadline_entry: dict[str, object] = deadline_raw if isinstance(deadline_raw, dict) else {}
+  category_raw = metadata.get("category")
+  category_entry: dict[str, object] = category_raw if isinstance(category_raw, dict) else {}
+
+  web_base_url = os.getenv("WEB_BASE_URL", "http://localhost:3000")
+  compliance_event = build_event(
+    EVENT_COMPLIANCE_COMPLETED,
+    {
+      "document_id": document_id,
+      "tenant_id": tenant_id,
+      "document_filename": document.filename,
+      "status": "compliance_completed",
+      "eligibility_score": eligibility_score,
+      "recommendation": recommendation,
+      "budget": budget_entry.get("value"),
+      "deadline": deadline_entry.get("value"),
+      "category": category_entry.get("value"),
+      "document_link": f"{web_base_url}/documents/{document_id}/compliance",
+      "report": report,
+    },
+  )
+  publish_event(EVENT_COMPLIANCE_COMPLETED, compliance_event)

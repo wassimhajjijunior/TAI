@@ -1,92 +1,15 @@
-import os
 import logging
-from importlib import import_module
 from typing import Any
 
 from ...core import document_repository
 from ...core.pipeline_events import EVENT_EMBEDDING_COMPLETE, QUEUE_EMBEDDING, build_event
 from ...core.rabbitmq import consume, publish_event
+from .constants import DEFAULT_TENANT_ID, EMBEDDING_BATCH_SIZE, EMBEDDING_DIMENSION
+from .hf_client import request_embeddings
+from .utils import batch
 
-
-DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
-EMBEDDING_BATCH_SIZE = 32
-EMBEDDING_DIMENSION = 1024
-HF_DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 
 logger = logging.getLogger(__name__)
-
-
-def _hf_embedding_endpoint() -> str:
-  configured = os.getenv("HF_EMBEDDING_API_URL", "").strip()
-  if configured:
-    return configured
-
-  model_name = os.getenv("HF_EMBEDDING_MODEL", HF_DEFAULT_EMBEDDING_MODEL).strip() or HF_DEFAULT_EMBEDDING_MODEL
-  return f"https://router.huggingface.co/hf-inference/models/{model_name}/pipeline/feature-extraction"
-
-
-def _hf_token() -> str:
-  token = os.getenv("HF_TOKEN", "").strip()
-  if not token:
-    raise RuntimeError("Missing required environment variable: HF_TOKEN")
-  return token
-
-
-def _batch(values: list[str], size: int) -> list[list[str]]:
-  if size <= 0:
-    return [values]
-  return [values[index:index + size] for index in range(0, len(values), size)]
-
-
-def _coerce_embeddings(payload: object, expected_count: int) -> list[list[float]]:
-  if isinstance(payload, dict):
-    embeddings_value = payload.get("embeddings") if isinstance(payload.get("embeddings"), list) else None
-    if embeddings_value is not None:
-      payload = embeddings_value
-
-  if isinstance(payload, list) and payload and all(isinstance(item, (int, float)) for item in payload):
-    vectors = [[float(value) for value in payload]]
-  elif isinstance(payload, list) and all(isinstance(item, list) for item in payload):
-    vectors = [[float(value) for value in row if isinstance(value, (int, float))] for row in payload]
-  else:
-    raise RuntimeError("Unexpected embedding payload shape from Hugging Face endpoint")
-
-  if len(vectors) != expected_count:
-    raise RuntimeError(
-      f"Embedding payload count mismatch: expected {expected_count}, got {len(vectors)}"
-    )
-
-  for vector in vectors:
-    if len(vector) != EMBEDDING_DIMENSION:
-      raise RuntimeError(
-        f"Embedding dimension mismatch: expected {EMBEDDING_DIMENSION}, got {len(vector)}"
-      )
-
-  return vectors
-
-
-def _request_embeddings(texts: list[str]) -> list[list[float]]:
-  requests_module = import_module("requests")
-  post = getattr(requests_module, "post")
-
-  response = post(
-    _hf_embedding_endpoint(),
-    headers={"Authorization": f"Bearer {_hf_token()}"},
-    json={
-      "inputs": texts,
-      "options": {"wait_for_model": True},
-    },
-    timeout=45,
-  )
-  if not bool(getattr(response, "ok", False)):
-    response_text = str(getattr(response, "text", ""))
-    raise RuntimeError(f"HF embedding request failed: {getattr(response, 'status_code', 'unknown')} {response_text}")
-
-  payload = response.json()
-  if isinstance(payload, dict) and "error" in payload:
-    raise RuntimeError(f"HF embedding error: {payload['error']}")
-
-  return _coerce_embeddings(payload, len(texts))
 
 
 def process_nlp_completed(event_payload: dict[str, Any]) -> None:
@@ -147,8 +70,8 @@ def process_nlp_completed(event_payload: dict[str, Any]) -> None:
   vectors_by_chunk_id: list[tuple[str, list[float]]] = []
   cursor = 0
   try:
-    for text_batch in _batch(chunk_texts, EMBEDDING_BATCH_SIZE):
-      embeddings = _request_embeddings(text_batch)
+    for text_batch in batch(chunk_texts, EMBEDDING_BATCH_SIZE):
+      embeddings = request_embeddings(text_batch)
       for vector in embeddings:
         chunk_id = str(chunks[cursor].get("id", ""))
         if not chunk_id:
@@ -169,7 +92,7 @@ def process_nlp_completed(event_payload: dict[str, Any]) -> None:
         "embedding_count": len(vectors_by_chunk_id),
         "embedding_dimension": EMBEDDING_DIMENSION,
         "batch_size": EMBEDDING_BATCH_SIZE,
-        "batch_count": len(_batch(chunk_texts, EMBEDDING_BATCH_SIZE)),
+        "batch_count": len(batch(chunk_texts, EMBEDDING_BATCH_SIZE)),
       },
     )
     publish_event(EVENT_EMBEDDING_COMPLETE, completion_event)

@@ -4,6 +4,7 @@ import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, FileUp, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
 import {
   deleteDocument,
+  fetchDocumentOcrArtifact,
   fetchDocuments,
   fetchMessagingStatus,
   getApiWebSocketBaseUrl,
@@ -43,6 +44,19 @@ function isSupportedType(file: File): boolean {
   const lowerName = file.name.toLowerCase();
   const hasSupportedExtension = acceptedExtensions.some((extension) => lowerName.endsWith(extension));
   return acceptedMimeTypes.includes(file.type) || hasSupportedExtension;
+}
+
+function downloadJsonFile(filename: string, payload: unknown): void {
+  const jsonText = JSON.stringify(payload, null, 2);
+  const blob = new Blob([jsonText], { type: "application/json" });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function DocumentUploadDropzone() {
@@ -105,6 +119,17 @@ export function DocumentUploadDropzone() {
       setDocumentsError(error instanceof Error ? error.message : "Failed to delete document");
     } finally {
       setDeletingDocumentId(null);
+    }
+  }
+
+  async function onDownloadOcrJson(documentId: string, filename: string) {
+    setDocumentsError("");
+    try {
+      const artifact = await fetchDocumentOcrArtifact(documentId);
+      const normalizedBaseName = filename.replace(/\.[^/.]+$/, "") || "document";
+      downloadJsonFile(`${normalizedBaseName}__ocr_result.json`, artifact);
+    } catch (error) {
+      setDocumentsError(error instanceof Error ? error.message : "Failed to load OCR JSON artifact");
     }
   }
 
@@ -515,6 +540,15 @@ export function DocumentUploadDropzone() {
                     <div className="w-28">
                       <Progress value={getStatusProgress(item.status)} />
                     </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={item.status === "ocr_processing" || deletingDocumentId !== null}
+                      onClick={() => void onDownloadOcrJson(item.id, item.filename)}
+                    >
+                      OCR JSON
+                    </Button>
                     <Button
                       type="button"
                       size="sm"
