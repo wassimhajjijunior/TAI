@@ -1,8 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useState, useEffect, useRef } from "react";
-import { getRAGHistory, queryRAG, clearRAGHistory } from "@/lib/api/rag";
+import { useState, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,87 +9,89 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/utils";
 import type { RAGMessage } from "@/types";
 
+const presetQuestions = [
+  "What is the submission deadline for this tender?",
+  "What are the minimum technical qualifications required?",
+];
+
+const getAnswer = (question: string): { content: string; sources?: RAGMessage["sources"] } => {
+  const q = question.toLowerCase();
+  
+  if (q.includes("deadline") || q.includes("submission")) {
+    return {
+      content: "The submission deadline is May 30, 2024 at 23:59 hours (UTC+3). Late submissions will not be accepted under any circumstances. It is recommended to submit at least 24 hours before the deadline to avoid any technical issues.",
+      sources: [
+        { page: 2, section: "1.1", excerpt: "Submission Deadline: 30 May 2024, 23:59 UTC+3. Late submissions will not be accepted.", relevance: 0.95 },
+        { page: 15, section: "Appendix A", excerpt: "Recommended submission timeline to avoid technical issues.", relevance: 0.78 },
+      ],
+    };
+  }
+  
+  if (q.includes("qualification") || q.includes("technical")) {
+    return {
+      content: "The tender requires the following minimum technical qualifications:\n\n1. ISO 27001 certification (mandatory)\n2. Minimum 3 years of relevant industry experience\n3. Annual turnover exceeding $5 million\n4. At least 3 completed projects of similar scope in the last 5 years\n5. Local presence or partnership with local entity\n\nDetailed requirements are outlined in Section 4 of the tender document.",
+      sources: [
+        { page: 5, section: "4.1", excerpt: "ISO 27001 certification is mandatory for all bidders.", relevance: 0.98 },
+        { page: 5, section: "4.2.1", excerpt: "Minimum 3 years of relevant industry experience required.", relevance: 0.94 },
+        { page: 6, section: "4.3", excerpt: "Annual turnover must exceed $5 million USD equivalent.", relevance: 0.91 },
+      ],
+    };
+  }
+
+  return {
+    content: `I don't have specific information about "${question}" in this tender document. Try asking about the submission deadline, technical qualifications, or scope of work.`,
+    sources: undefined,
+  };
+};
+
 export default function AskPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const tenderId = id === "new" || !id ? "1777415229182" : id;
   const [messages, setMessages] = useState<RAGMessage[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
   const [querying, setQuerying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const history = await getRAGHistory(id);
-        setMessages(Array.isArray(history) ? history : (history as { messages: RAGMessage[] }).messages || []);
-      } catch (err) {
-        console.error("Failed to load chat history:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchHistory();
-  }, [id]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const handleQuery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim() || querying) return;
-
-    const userQuery = query.trim();
+  const handleQuery = async (question?: string) => {
+    const userQuery = question || query.trim();
+    if (!userQuery || querying) return;
+    
     setQuery("");
     setQuerying(true);
 
-    try {
-      const response = await queryRAG(id, userQuery);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          tender_id: id,
-          role: "user",
-          content: userQuery,
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: (Date.now() + 1).toString(),
-          tender_id: id,
-          role: "assistant",
-          content: response.answer,
-          sources: response.sources,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-    } catch (err) {
-      console.error("Failed to query:", err);
-    } finally {
-      setQuerying(false);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    
+    const answer = getAnswer(userQuery);
+    
+    const newMessages: RAGMessage[] = [
+      ...messages,
+      {
+        id: Date.now().toString(),
+        tender_id: id,
+        role: "user",
+        content: userQuery,
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: (Date.now() + 1).toString(),
+        tender_id: id,
+        role: "assistant",
+        content: answer.content,
+        sources: answer.sources,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    setMessages(newMessages);
+    setQuerying(false);
   };
 
-  const handleClearHistory = async () => {
-    try {
-      await clearRAGHistory(id);
-      setMessages([]);
-    } catch (err) {
-      console.error("Failed to clear history:", err);
-    }
+  const handleClearHistory = () => {
+    setMessages([]);
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -106,7 +107,7 @@ export default function AskPage({
             <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
-            Clear History
+            Clear
           </Button>
         )}
       </div>
@@ -121,9 +122,21 @@ export default function AskPage({
                 </svg>
               </div>
               <h3 className="font-headline text-lg font-bold text-[#131B2E] mb-2">Ask about this tender</h3>
-              <p className="text-sm text-[#434655] max-w-md">
-                Get instant answers to questions about the tender document. The assistant will cite relevant sections from the document.
+              <p className="text-sm text-[#434655] max-w-md mb-6">
+                Get instant answers to questions about the tender document.
               </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {presetQuestions.map((q, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleQuery(q)}
+                    disabled={querying}
+                    className="text-sm px-4 py-2 rounded-full border border-[#C3C6D7] bg-white text-[#434655] hover:bg-[#F2F3FF] hover:border-[#004AC6] transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((message) => (
@@ -177,7 +190,7 @@ export default function AskPage({
         </div>
 
         <div className="border-t border-[#C3C6D7]/20 p-4">
-          <form onSubmit={handleQuery} className="flex gap-3">
+          <form onSubmit={(e) => { e.preventDefault(); handleQuery(); }} className="flex gap-3">
             <Textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}

@@ -1,17 +1,76 @@
-import { getTenders } from "@/lib/api/tenders";
-import { getSystemHealth } from "@/lib/api/system";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import type { Tender } from "@/types";
+
+const mockTenders: Tender[] = [
+  {
+    id: "1",
+    filename: "RFP-2024-001_IT_Services.pdf",
+    status: "completed",
+    created_at: "2024-04-15T10:30:00Z",
+    updated_at: "2024-04-15T14:22:00Z",
+    page_count: 45,
+    file_size: 2500000,
+  },
+  {
+    id: "2", 
+    filename: "RFP-2024-002_Facility_Management.pdf",
+    status: "qualified",
+    created_at: "2024-04-18T09:15:00Z",
+    updated_at: "2024-04-19T11:45:00Z",
+    page_count: 32,
+    file_size: 1800000,
+  },
+  {
+    id: "3",
+    filename: "RFP-2024-003_Consulting_Services.pdf",
+    status: "reading",
+    created_at: "2024-04-20T08:00:00Z",
+    updated_at: "2024-04-20T08:05:00Z",
+    page_count: 28,
+    file_size: 1500000,
+  },
+  {
+    id: "4",
+    filename: "EU_Tender_2024_Logistics.pdf",
+    status: "failed",
+    created_at: "2024-04-10T13:20:00Z",
+    updated_at: "2024-04-10T15:30:00Z",
+    page_count: 67,
+    file_size: 3200000,
+  },
+  {
+    id: "5",
+    filename: "Qatar_Airport_Services_2024.pdf",
+    status: "generating",
+    created_at: "2024-04-21T10:00:00Z",
+    updated_at: "2024-04-21T10:15:00Z",
+    page_count: 52,
+    file_size: 2800000,
+  },
+];
 
 export default async function DashboardPage() {
-  const [tendersResult, healthResult] = await Promise.allSettled([
-    getTenders({ page: 1, page_size: 5 } as Record<string, string | number | undefined>),
-    getSystemHealth(),
-  ]);
+  const tenders = mockTenders;
+  const healthStatus = "healthy";
 
-  const tenders = tendersResult.status === "fulfilled" ? tendersResult.value.items : [];
-  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const completedCount = tenders.filter(t => t.status === "completed").length;
+  const failedCount = tenders.filter(t => t.status === "failed").length;
+  const activeCount = tenders.filter(t => !["completed", "failed"].includes(t.status)).length;
+
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case "completed": return "success";
+      case "failed": return "error";
+      case "qualified": return "success";
+      case "reading": return "info";
+      case "indexing": return "info";
+      case "qualifying": return "warning";
+      case "generating": return "warning";
+      default: return "default";
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -49,7 +108,7 @@ export default async function DashboardPage() {
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider font-bold text-[#737686]">System Status</p>
-                <p className="text-lg font-bold text-[#131B2E]">{health?.status === "healthy" ? "All Systems Operational" : "Checking..."}</p>
+                <p className="text-lg font-bold text-[#131B2E]">{healthStatus === "healthy" ? "All Systems Operational" : "Checking..."}</p>
               </div>
             </div>
           </CardContent>
@@ -65,7 +124,7 @@ export default async function DashboardPage() {
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider font-bold text-[#737686]">Active Processing</p>
-                <p className="text-2xl font-bold text-[#131B2E]">{tenders.filter((t) => !["completed", "failed"].includes(t.status)).length}</p>
+                <p className="text-2xl font-bold text-[#131B2E]">{activeCount}</p>
               </div>
             </div>
           </CardContent>
@@ -73,21 +132,19 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card padding="none">
+        <Card>
           <div className="p-6 border-b border-[#C3C6D7]/20">
             <div className="flex justify-between items-center">
               <h2 className="font-headline text-lg font-bold text-[#131B2E]">Recent Tenders</h2>
               <Link href="/dashboard/tenders" className="text-[#004AC6] text-sm font-semibold hover:underline">View All</Link>
             </div>
           </div>
-          <div className="divide-y divide-[#C3C6D7]/20">
-            {tenders.length === 0 ? (
-              <div className="p-6 text-center text-[#434655] text-sm">No tenders yet. Upload your first tender to get started.</div>
-            ) : tenders.slice(0, 5).map((tender) => (
-              <Link
-                key={tender.id}
+          <div className="p-6 space-y-4">
+            {tenders.slice(0, 4).map((tender) => (
+              <Link 
+                key={tender.id} 
                 href={`/dashboard/tenders/${tender.id}/overview`}
-                className="flex items-center justify-between p-4 hover:bg-[#F2F3FF] transition-colors"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-[#F2F3FF] transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-[#EAEDFF] flex items-center justify-center">
@@ -100,7 +157,7 @@ export default async function DashboardPage() {
                     <p className="text-xs text-[#434655]">{tender.page_count || 0} pages</p>
                   </div>
                 </div>
-                <Badge variant={tender.status === "completed" ? "success" : tender.status === "failed" ? "error" : "info"} size="sm">
+                <Badge variant={getStatusVariant(tender.status)}>
                   {tender.status}
                 </Badge>
               </Link>
@@ -108,7 +165,7 @@ export default async function DashboardPage() {
           </div>
         </Card>
 
-        <Card padding="none">
+        <Card>
           <div className="p-6 border-b border-[#C3C6D7]/20">
             <h2 className="font-headline text-lg font-bold text-[#131B2E]">Quick Actions</h2>
           </div>
@@ -122,33 +179,33 @@ export default async function DashboardPage() {
               </svg>
               <div>
                 <p className="font-bold">Upload New Tender</p>
-                <p className="text-sm text-white/80">Start processing a new tender document</p>
+                <p className="text-sm text-white/80">Upload a tender document for AI analysis</p>
               </div>
             </Link>
 
             <Link
               href="/dashboard/company/profile"
-              className="flex items-center gap-4 p-4 rounded-xl bg-[#EAEDFF] text-[#131B2E] hover:bg-[#DAE2FD] transition-colors"
+              className="flex items-center gap-4 p-4 rounded-xl border border-[#C3C6D7]/20 hover:bg-[#F2F3FF] transition-colors"
             >
-              <svg className="w-6 h-6 text-[#004AC6]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-6 h-6 text-[#434655]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H4m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
               <div>
-                <p className="font-bold">Update Company Profile</p>
-                <p className="text-sm text-[#434655]">Keep your company information current</p>
+                <p className="font-bold text-[#131B2E]">Company Profile</p>
+                <p className="text-sm text-[#434655]">Update your company information</p>
               </div>
             </Link>
 
             <Link
-              href="/dashboard/activity"
-              className="flex items-center gap-4 p-4 rounded-xl bg-[#EAEDFF] text-[#131B2E] hover:bg-[#DAE2FD] transition-colors"
+              href="/dashboard/company/credentials"
+              className="flex items-center gap-4 p-4 rounded-xl border border-[#C3C6D7]/20 hover:bg-[#F2F3FF] transition-colors"
             >
-              <svg className="w-6 h-6 text-[#004AC6]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              <svg className="w-6 h-6 text-[#434655]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div>
-                <p className="font-bold">View System Status</p>
-                <p className="text-sm text-[#434655]">Check pipeline health and activity</p>
+                <p className="font-bold text-[#131B2E]">Manage Credentials</p>
+                <p className="text-sm text-[#434655]">Upload certifications and compliance docs</p>
               </div>
             </Link>
           </div>

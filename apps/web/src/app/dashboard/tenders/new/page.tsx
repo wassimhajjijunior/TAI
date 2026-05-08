@@ -2,32 +2,30 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { uploadTender } from "@/lib/api/tenders";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Input } from "@/components/ui/input";
 
 export default function NewTenderPage() {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const handleUpload = useCallback(async (file: File) => {
+  const mockUpload = useCallback(async (file: File) => {
     setError(null);
     setUploading(true);
+    setUploadProgress(0);
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const tender = await uploadTender(formData);
-      router.push(`/dashboard/tenders/${tender.id}/overview`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload tender");
-      setUploading(false);
+    const totalSteps = 10;
+    for (let i = 1; i <= totalSteps; i++) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setUploadProgress((i / totalSteps) * 100);
     }
+
+    const mockId = Date.now().toString();
+    router.push(`/dashboard/tenders/${mockId}/overview`);
   }, [router]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -35,18 +33,18 @@ export default function NewTenderPage() {
     setDragActive(false);
     const file = e.dataTransfer.files?.[0];
     if (file && file.type === "application/pdf") {
-      handleUpload(file);
+      mockUpload(file);
     } else {
       setError("Please upload a PDF file");
     }
-  }, [handleUpload]);
+  }, [mockUpload]);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      handleUpload(file);
+      mockUpload(file);
     }
-  }, [handleUpload]);
+  }, [mockUpload]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -107,9 +105,13 @@ export default function NewTenderPage() {
             <div className="mt-6">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-[#131B2E]">Uploading document...</span>
+                <span className="text-sm text-[#737686]">{Math.round(uploadProgress)}%</span>
               </div>
               <div className="h-2 bg-[#EAEDFF] rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-[#004AC6] to-[#2563EB] rounded-full animate-pulse" style={{ width: "60%" }} />
+                <div 
+                  className="h-full bg-gradient-to-r from-[#004AC6] to-[#2563EB] rounded-full transition-all duration-300" 
+                  style={{ width: `${uploadProgress}%` }} 
+                />
               </div>
               <p className="text-xs text-[#737686] mt-2">This may take a few moments depending on file size</p>
             </div>

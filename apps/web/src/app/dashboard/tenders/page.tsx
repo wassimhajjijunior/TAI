@@ -1,72 +1,89 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { getTenders, uploadTender } from "@/lib/api/tenders";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState } from "@/components/ui/states";
-import type { Tender, PaginatedResponse } from "@/types";
+import type { Tender } from "@/types";
 
-interface TendersListResponse extends PaginatedResponse<Tender> {}
+const mockTenders: Tender[] = [
+  {
+    id: "1",
+    filename: "RFP-2024-001_IT_Services.pdf",
+    status: "completed",
+    created_at: "2024-04-15T10:30:00Z",
+    updated_at: "2024-04-15T14:22:00Z",
+    page_count: 45,
+    file_size: 2500000,
+  },
+  {
+    id: "2", 
+    filename: "RFP-2024-002_Facility_Management.pdf",
+    status: "qualified",
+    created_at: "2024-04-18T09:15:00Z",
+    updated_at: "2024-04-19T11:45:00Z",
+    page_count: 32,
+    file_size: 1800000,
+  },
+  {
+    id: "3",
+    filename: "RFP-2024-003_Consulting_Services.pdf",
+    status: "reading",
+    created_at: "2024-04-20T08:00:00Z",
+    updated_at: "2024-04-20T08:05:00Z",
+    page_count: 28,
+    file_size: 1500000,
+  },
+  {
+    id: "4",
+    filename: "EU_Tender_2024_Logistics.pdf",
+    status: "failed",
+    created_at: "2024-04-10T13:20:00Z",
+    updated_at: "2024-04-10T15:30:00Z",
+    page_count: 67,
+    file_size: 3200000,
+  },
+  {
+    id: "5",
+    filename: "Qatar_Airport_Services_2024.pdf",
+    status: "generating",
+    created_at: "2024-04-21T10:00:00Z",
+    updated_at: "2024-04-21T10:15:00Z",
+    page_count: 52,
+    file_size: 2800000,
+  },
+  {
+    id: "6",
+    filename: "Singapore_HDB_Construction_2024.pdf",
+    status: "indexing",
+    created_at: "2024-04-22T08:00:00Z",
+    updated_at: "2024-04-22T08:10:00Z",
+    page_count: 89,
+    file_size: 4500000,
+  },
+  {
+    id: "7",
+    filename: "Dubai_Metro_Phase_4_Tender.pdf",
+    status: "qualified",
+    created_at: "2024-04-19T14:30:00Z",
+    updated_at: "2024-04-20T09:00:00Z",
+    page_count: 156,
+    file_size: 7800000,
+  },
+];
 
-export default function TendersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string; status?: string; search?: string }>;
-}) {
-  const [tenders, setTenders] = useState<Tender[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function TendersPage() {
+  const [tenders, setTenders] = useState<Tender[]>(mockTenders);
+  const [loading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [sp, setSp] = useState<{ page?: string; status?: string; search?: string }>({});
 
-  useEffect(() => {
-    searchParams.then(setSp);
-  }, [searchParams]);
-
-  useEffect(() => {
-    const fetchTenders = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const page = sp.page ? parseInt(sp.page, 10) : 1;
-        const response = await getTenders({
-          page,
-          page_size: 10,
-          status: sp.status,
-          search: sp.search,
-        });
-        setTenders(response.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load tenders");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTenders();
-  }, [sp.page, sp.status, sp.search]);
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append("file", file);
-
+  const handleUpload = async () => {
     setUploading(true);
-    try {
-      await uploadTender(formData);
-      const response = await getTenders({ page: 1, page_size: 10 });
-      setTenders(response.items);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload tender");
-    } finally {
-      setUploading(false);
-    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setUploading(false);
   };
 
   const getStatusVariant = (status: string) => {
@@ -75,9 +92,16 @@ export default function TendersPage({
         return "success";
       case "failed":
         return "error";
+      case "qualified":
+        return "success";
       default:
         return "info";
     }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   return (
@@ -113,10 +137,6 @@ export default function TendersPage({
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
         </div>
-      ) : error ? (
-        <Card>
-          <div className="p-6 text-center text-[#BA1A1A]">{error}</div>
-        </Card>
       ) : tenders.length === 0 ? (
         <EmptyState
           title="No tenders yet"
@@ -129,7 +149,7 @@ export default function TendersPage({
           }
         />
       ) : (
-        <Card padding="none">
+        <Card>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -137,6 +157,7 @@ export default function TendersPage({
                   <th className="text-left p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Filename</th>
                   <th className="text-left p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Status</th>
                   <th className="text-left p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Pages</th>
+                  <th className="text-left p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Size</th>
                   <th className="text-left p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Created</th>
                   <th className="text-right p-4 text-[10px] uppercase tracking-wider font-bold text-[#737686]">Actions</th>
                 </tr>
@@ -150,11 +171,12 @@ export default function TendersPage({
                       </Link>
                     </td>
                     <td className="p-4">
-                      <Badge variant={getStatusVariant(tender.status)} size="sm">
+                      <Badge variant={getStatusVariant(tender.status)}>
                         {tender.status}
                       </Badge>
                     </td>
                     <td className="p-4 text-sm text-[#434655]">{tender.page_count || "-"}</td>
+                    <td className="p-4 text-sm text-[#434655]">{formatSize(tender.file_size || 0)}</td>
                     <td className="p-4 text-sm text-[#434655]">
                       {new Date(tender.created_at).toLocaleDateString()}
                     </td>

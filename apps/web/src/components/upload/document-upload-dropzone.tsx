@@ -1,24 +1,19 @@
 "use client";
 
-import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, useEffect, useRef, useState } from "react";
 import { Activity, FileUp, FileText, LoaderCircle, ShieldCheck } from "lucide-react";
 import {
-  deleteDocument,
-  fetchDocumentOcrArtifact,
-  fetchDocuments,
-  fetchMessagingStatus,
-  getApiWebSocketBaseUrl,
-  getStatusProgress,
-  uploadDocument,
-  type MessagingStatus,
-  type UploadedDocument,
-} from "@/lib/api/client";
+  deleteTender,
+  getTenders,
+  uploadTender,
+} from "@/lib/api/tenders";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import type { Tender } from "@/types";
 
 const acceptedMimeTypes = [
   "application/pdf",
@@ -46,60 +41,35 @@ function isSupportedType(file: File): boolean {
   return acceptedMimeTypes.includes(file.type) || hasSupportedExtension;
 }
 
-function downloadJsonFile(filename: string, payload: unknown): void {
-  const jsonText = JSON.stringify(payload, null, 2);
-  const blob = new Blob([jsonText], { type: "application/json" });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(objectUrl);
-}
-
 export function DocumentUploadDropzone() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [uploaded, setUploaded] = useState<UploadedDocument | null>(null);
-  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [uploaded, setUploaded] = useState<Tender | null>(null);
+  const [documents, setDocuments] = useState<Tender[]>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const [documentsError, setDocumentsError] = useState("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
-  const [isTabVisible, setIsTabVisible] = useState(true);
-  const [messagingStatus, setMessagingStatus] = useState<MessagingStatus | null>(null);
-  const [isLoadingMessaging, setIsLoadingMessaging] = useState(true);
-  const [messagingError, setMessagingError] = useState("");
-  const isMessagingRequestInFlightRef = useRef(false);
-  const websocketRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
 
-  async function loadDocuments(options?: { silent?: boolean }) {
-    const silent = options?.silent ?? false;
-
-    if (!isMountedRef.current) {
-      return;
-    }
-    if (!silent) {
-      setIsLoadingDocuments(true);
-      setDocumentsError("");
-    }
+  async function loadDocuments() {
+    if (!isMountedRef.current) return;
+    
+    setIsLoadingDocuments(true);
+    setDocumentsError("");
 
     try {
-      const items = await fetchDocuments();
+      const response = await getTenders({ page: 1, page_size: 50 });
       if (isMountedRef.current) {
-        setDocuments(items);
+        setDocuments(response.items || []);
       }
     } catch (error) {
       if (isMountedRef.current) {
         setDocumentsError(error instanceof Error ? error.message : "Failed to load documents");
       }
     } finally {
-      if (isMountedRef.current && !silent) {
+      if (isMountedRef.current) {
         setIsLoadingDocuments(false);
       }
     }
@@ -110,8 +80,8 @@ export function DocumentUploadDropzone() {
     setDocumentsError("");
 
     try {
-      await deleteDocument(documentId);
-      setDocuments((previous) => previous.filter((item) => item.id !== documentId));
+      await deleteTender(documentId);
+      setDocuments((prev) => prev.filter((item) => item.id !== documentId));
       if (uploaded?.id === documentId) {
         setUploaded(null);
       }
@@ -122,150 +92,13 @@ export function DocumentUploadDropzone() {
     }
   }
 
-  async function onDownloadOcrJson(documentId: string, filename: string) {
-    setDocumentsError("");
-    try {
-      const artifact = await fetchDocumentOcrArtifact(documentId);
-      const normalizedBaseName = filename.replace(/\.[^/.]+$/, "") || "document";
-      downloadJsonFile(`${normalizedBaseName}__ocr_result.json`, artifact);
-    } catch (error) {
-      setDocumentsError(error instanceof Error ? error.message : "Failed to load OCR JSON artifact");
-    }
-  }
-
-  async function loadMessagingStatus(options?: { silent?: boolean }) {
-    const silent = options?.silent ?? false;
-
-    if (!isMountedRef.current) {
-      return;
-    }
-
-    if (isMessagingRequestInFlightRef.current) {
-      return;
-    }
-
-    isMessagingRequestInFlightRef.current = true;
-
-    if (!silent) {
-      setIsLoadingMessaging(true);
-      setMessagingError("");
-    }
-
-    try {
-      const status = await fetchMessagingStatus();
-      if (isMountedRef.current) {
-        setMessagingStatus(status);
-      }
-    } catch (error) {
-      if (isMountedRef.current) {
-        setMessagingError(error instanceof Error ? error.message : "Failed to load messaging status");
-      }
-    } finally {
-      isMessagingRequestInFlightRef.current = false;
-      if (isMountedRef.current && !silent) {
-        setIsLoadingMessaging(false);
-      }
-    }
-  }
-
-  const uploadProgress = useMemo(() => (uploaded ? 100 : 0), [uploaded]);
-
-  const hasProcessingDocuments = useMemo(
-    () => documents.some((item) => item.status === "ocr_processing"),
-    [documents]
-  );
-
   useEffect(() => {
-    void loadDocuments();
-    void loadMessagingStatus();
-
-    const onVisibilityChange = () => {
-      setIsTabVisible(document.visibilityState === "visible");
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
+    loadDocuments();
+    
     return () => {
       isMountedRef.current = false;
-      if (reconnectTimeoutRef.current !== null) {
-        window.clearTimeout(reconnectTimeoutRef.current);
-      }
-      websocketRef.current?.close();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
-
-  useEffect(() => {
-    let isDisposed = false;
-
-    const connect = () => {
-      if (isDisposed || !isMountedRef.current) {
-        return;
-      }
-
-      const ws = new WebSocket(`${getApiWebSocketBaseUrl()}/api/v1/live/documents`);
-      websocketRef.current = ws;
-
-      ws.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data) as {
-            type?: string;
-            items?: UploadedDocument[];
-          };
-          if (payload.type === "documents.updated" && Array.isArray(payload.items) && isMountedRef.current) {
-            setDocuments(payload.items);
-            setIsLoadingDocuments(false);
-            setDocumentsError("");
-          }
-        } catch {
-        }
-      };
-
-      ws.onclose = () => {
-        if (isDisposed || !isMountedRef.current) {
-          return;
-        }
-        reconnectTimeoutRef.current = window.setTimeout(connect, 2000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      isDisposed = true;
-      if (reconnectTimeoutRef.current !== null) {
-        window.clearTimeout(reconnectTimeoutRef.current);
-      }
-      websocketRef.current?.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasProcessingDocuments || !isTabVisible) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void loadDocuments({ silent: true });
-    }, 3000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [hasProcessingDocuments, isTabVisible]);
-
-  useEffect(() => {
-    if (!hasProcessingDocuments || !isTabVisible) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void loadMessagingStatus({ silent: true });
-    }, 15000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [hasProcessingDocuments, isTabVisible]);
 
   async function processFile(file: File) {
     if (!isSupportedType(file)) {
@@ -283,9 +116,11 @@ export function DocumentUploadDropzone() {
     setIsUploading(true);
 
     try {
-      const result = await uploadDocument(file);
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadTender(formData);
       setUploaded(result);
-      setDocuments((previous) => [result, ...previous.filter((item) => item.id !== result.id)]);
+      setDocuments((prev) => [result, ...prev.filter((item) => item.id !== result.id)]);
       if (inputRef.current) {
         inputRef.current.value = "";
       }
@@ -302,23 +137,21 @@ export function DocumentUploadDropzone() {
     inputRef.current?.click();
   }
 
-  function onDragOver(event: DragEvent<HTMLButtonElement>) {
+  function onDragOver(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     if (!isUploading) {
       setIsDragging(true);
     }
   }
 
-  function onDragLeave(event: DragEvent<HTMLButtonElement>) {
+  function onDragLeave(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setIsDragging(false);
   }
 
-  function onDrop(event: DragEvent<HTMLButtonElement>) {
+  function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    if (isUploading) {
-      return;
-    }
+    if (isUploading) return;
 
     const file = event.dataTransfer.files?.[0];
     if (!file) {
@@ -326,8 +159,12 @@ export function DocumentUploadDropzone() {
       return;
     }
 
-    void processFile(file);
+    processFile(file);
   }
+
+  const hasProcessingDocuments = documents.some((item) => 
+    ["reading", "indexing", "qualifying", "generating"].includes(item.status)
+  );
 
   return (
     <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
@@ -338,31 +175,29 @@ export function DocumentUploadDropzone() {
             Upload tender document
           </CardTitle>
           <CardDescription>
-            Drag & drop your file or select from your device. This starts Track A ingestion flow.
+            Drag and drop your file or select from your device.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <button
-            type="button"
+          <div
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
             className={cn(
-              "group relative rounded-xl border-2 border-dashed p-8 transition",
+              "group relative rounded-xl border-2 border-dashed p-8 transition cursor-pointer",
               "bg-gradient-to-b from-background to-muted/30",
               isDragging ? "border-primary bg-primary/5" : "border-border",
-              isUploading ? "pointer-events-none opacity-70" : "cursor-pointer hover:border-primary/50",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              isUploading ? "pointer-events-none opacity-70" : "hover:border-primary/50",
             )}
             onClick={openFileDialog}
-            aria-label="Drop file here or open file selector"
+            role="button"
+            tabIndex={0}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 openFileDialog();
               }
             }}
-            disabled={isUploading}
           >
             <div className="mx-auto flex max-w-sm flex-col items-center gap-3 text-center">
               <div className="rounded-full border border-primary/20 bg-primary/10 p-3 text-primary">
@@ -370,30 +205,28 @@ export function DocumentUploadDropzone() {
               </div>
               <p className="text-sm font-medium">Drop files here or click to browse</p>
               <p className="text-xs text-muted-foreground">Accepted: PDF, DOC, DOCX, TXT · Max 20 MB</p>
-              <Badge variant="outline">Step 1 · Intake</Badge>
+              <Badge variant="outline">Upload</Badge>
             </div>
-          </button>
+          </div>
 
           <input
             ref={inputRef}
             type="file"
             hidden
-            accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            accept=".pdf,.doc,.docx,.txt"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (!file || isUploading) {
-                return;
-              }
-              void processFile(file);
+              if (!file || isUploading) return;
+              processFile(file);
             }}
           />
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{isUploading ? "Uploading (in progress)" : uploaded ? "Upload completed" : "Waiting for file"}</span>
-              <span>{isUploading ? "..." : `${uploadProgress}%`}</span>
+              <span>{isUploading ? "..." : "100%"}</span>
             </div>
-            <Progress value={uploadProgress} />
+            <Progress value={isUploading ? 100 : 0} />
           </div>
 
           {errorMessage ? (
@@ -416,7 +249,7 @@ export function DocumentUploadDropzone() {
             <ShieldCheck className="size-4 text-primary" />
             Upload summary
           </CardTitle>
-          <CardDescription>Latest upload information saved from API response.</CardDescription>
+          <CardDescription>Latest upload information.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {uploaded ? (
@@ -429,7 +262,7 @@ export function DocumentUploadDropzone() {
                 <FileText className="size-4 text-primary" />
                 <div>
                   <p className="text-sm font-medium">{uploaded.filename}</p>
-                  <p className="text-xs text-muted-foreground">{formatSize(uploaded.size_bytes)} · {uploaded.content_type}</p>
+                  <p className="text-xs text-muted-foreground">{formatSize(uploaded.file_size || 0)}</p>
                 </div>
               </div>
               <Separator />
@@ -450,66 +283,10 @@ export function DocumentUploadDropzone() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="size-4 text-primary" />
-            Messaging & pipeline status
+            Existing files in database
           </CardTitle>
           <CardDescription>
-            RabbitMQ connectivity and Track A event flow used by OCR and downstream services.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {isLoadingMessaging ? <p className="text-sm text-muted-foreground">Loading messaging status...</p> : null}
-
-          {messagingError ? (
-            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {messagingError}
-            </p>
-          ) : null}
-
-          {!isLoadingMessaging && !messagingError && messagingStatus ? (
-            <>
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
-                <span className="text-muted-foreground">Broker connectivity</span>
-                <Badge variant={messagingStatus.rabbitmq.connected ? "default" : "destructive"}>
-                  {messagingStatus.rabbitmq.connected ? "Connected" : "Disconnected"}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{messagingStatus.rabbitmq.detail}</span>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Exchange</p>
-                <p className="font-mono text-xs">
-                  {messagingStatus.topology.exchange} ({messagingStatus.topology.exchange_type})
-                </p>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <p className="mb-2 text-xs text-muted-foreground">Event flow</p>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {messagingStatus.topology.event_flow.map((event, index) => (
-                    <div key={event} className="flex items-center gap-2">
-                      <Badge variant="secondary">{event}</Badge>
-                      {index < messagingStatus.topology.event_flow.length - 1 ? (
-                        <span className="text-muted-foreground">→</span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : null}
-        </CardContent>
-        <CardFooter className="justify-end">
-          <Button type="button" variant="outline" onClick={() => void loadMessagingStatus()} disabled={isLoadingMessaging}>
-            Refresh messaging
-          </Button>
-        </CardFooter>
-      </Card>
-
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="text-base">Existing files in database</CardTitle>
-          <CardDescription>
-            Files already uploaded and stored in Supabase documents table.
+            Files already uploaded and stored.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -532,29 +309,17 @@ export function DocumentUploadDropzone() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{item.filename}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatSize(item.size_bytes)} · {item.content_type}
+                      {formatSize(item.file_size || 0)}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={item.status === "ocr_failed" ? "destructive" : "secondary"}>{item.status}</Badge>
-                    <div className="w-28">
-                      <Progress value={getStatusProgress(item.status)} />
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={item.status === "ocr_processing" || deletingDocumentId !== null}
-                      onClick={() => void onDownloadOcrJson(item.id, item.filename)}
-                    >
-                      OCR JSON
-                    </Button>
+                    <Badge variant={item.status === "failed" ? "destructive" : "secondary"}>{item.status}</Badge>
                     <Button
                       type="button"
                       size="sm"
                       variant="destructive"
                       disabled={deletingDocumentId !== null}
-                      onClick={() => void onDeleteDocument(item.id)}
+                      onClick={() => onDeleteDocument(item.id)}
                     >
                       {deletingDocumentId === item.id ? "Deleting..." : "Delete"}
                     </Button>
@@ -565,7 +330,7 @@ export function DocumentUploadDropzone() {
           ) : null}
         </CardContent>
         <CardFooter className="justify-end">
-          <Button type="button" variant="outline" onClick={() => void loadDocuments()} disabled={isLoadingDocuments}>
+          <Button type="button" variant="outline" onClick={loadDocuments} disabled={isLoadingDocuments}>
             Refresh list
           </Button>
         </CardFooter>

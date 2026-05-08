@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getCompanyProfile, updateCompanyProfile } from "@/lib/api/company";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,41 +8,30 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import type { CompanyProfile } from "@/types";
 
+const mockProfile: CompanyProfile = {
+  id: "1",
+  name: "TechForward Solutions Inc.",
+  description: "A leading provider of IT infrastructure and managed services with 15+ years of experience in delivering enterprise-grade solutions to government and private sector clients across Asia Pacific.",
+  website: "https://www.techforward.example.com",
+  contact_email: "procurement@techforward.example.com",
+  contact_phone: "+1 (555) 123-4567",
+  address: "100 Innovation Drive, Tech District, Singapore 138589",
+  created_at: "2021-01-15T00:00:00Z",
+  updated_at: "2024-04-20T10:30:00Z",
+};
+
 export default function CompanyProfilePage() {
-  const [profile, setProfile] = useState<CompanyProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile] = useState<CompanyProfile>(mockProfile);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    website: "",
-    contact_email: "",
-    contact_phone: "",
-    address: "",
+    name: mockProfile.name,
+    description: mockProfile.description || "",
+    website: mockProfile.website || "",
+    contact_email: mockProfile.contact_email || "",
+    contact_phone: mockProfile.contact_phone || "",
+    address: mockProfile.address || "",
   });
   const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const data = await getCompanyProfile();
-        setProfile(data);
-        setFormData({
-          name: data.name,
-          description: data.description || "",
-          website: data.website || "",
-          contact_email: data.contact_email || "",
-          contact_phone: data.contact_phone || "",
-          address: data.address || "",
-        });
-      } catch (err) {
-        console.error("Failed to load company profile:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
-  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -55,25 +43,11 @@ export default function CompanyProfilePage() {
     e.preventDefault();
     setSaving(true);
     setSuccess(false);
-    try {
-      const updated = await updateCompanyProfile(formData);
-      setProfile(updated);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      console.error("Failed to update profile:", err);
-    } finally {
-      setSaving(false);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    setSuccess(true);
+    setSaving(false);
+    setTimeout(() => setSuccess(false), 3000);
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 max-w-2xl">

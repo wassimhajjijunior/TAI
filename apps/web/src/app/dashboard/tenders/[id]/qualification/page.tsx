@@ -1,76 +1,98 @@
 "use client";
 
-import { use } from "react";
-import { useState, useEffect } from "react";
-import { getComplianceRequirements, getComplianceScore, updateRequirementStatus, runQualificationCheck } from "@/lib/api/compliance";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ComplianceRequirement, ComplianceScore } from "@/types";
 
+const mockRequirements: ComplianceRequirement[] = [
+  {
+    id: "1",
+    tender_id: "1",
+    clause: "4.1.1",
+    requirement: "Company must be registered for minimum 3 years",
+    status: "met",
+    evidence: "Business registration certificate dated 2021",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "2",
+    tender_id: "1",
+    clause: "4.2.3",
+    requirement: "Annual turnover must exceed $5 million",
+    status: "met",
+    evidence: "Audited financial statements 2022-2023",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "3",
+    tender_id: "1",
+    clause: "5.1.2",
+    requirement: "ISO 27001 certification required",
+    status: "met",
+    evidence: "Certificate valid until 2026",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "4",
+    tender_id: "1",
+    clause: "6.3.1",
+    requirement: "Local presence in target country",
+    status: "review",
+    evidence: "Office lease agreement under review",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "5",
+    tender_id: "1",
+    clause: "7.2.4",
+    requirement: "Previous experience with similar projects",
+    status: "met",
+    evidence: "3 completed projects in last 2 years",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "6",
+    tender_id: "1",
+    clause: "8.1.1",
+    requirement: "Professional indemnity insurance $10M",
+    status: "unmet",
+    evidence: "Current coverage $2M - needs upgrade",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+];
+
+const mockScore: ComplianceScore = {
+  id: "1",
+  eligibility_score: 83.3,
+  total_requirements: 6,
+  met_requirements: 4,
+  recommendation: "Meets 83% of compliance requirements",
+  go_no_go: "go",
+};
+
 export default function QualificationPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
-  const [requirements, setRequirements] = useState<ComplianceRequirement[]>([]);
-  const [score, setScore] = useState<ComplianceScore | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [requirements] = useState<ComplianceRequirement[]>(mockRequirements);
+  const [score] = useState<ComplianceScore>(mockScore);
   const [runningCheck, setRunningCheck] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [reqs, complianceScore] = await Promise.all([
-          getComplianceRequirements(id),
-          getComplianceScore(id),
-        ]);
-        setRequirements(reqs);
-        setScore(complianceScore);
-      } catch (err) {
-        console.error("Failed to load compliance data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [id]);
-
   const handleRunCheck = async () => {
     setRunningCheck(true);
-    try {
-      await runQualificationCheck(id);
-      const [reqs, complianceScore] = await Promise.all([
-        getComplianceRequirements(id),
-        getComplianceScore(id),
-      ]);
-      setRequirements(reqs);
-      setScore(complianceScore);
-    } catch (err) {
-      console.error("Failed to run qualification check:", err);
-    } finally {
-      setRunningCheck(false);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    setRunningCheck(false);
   };
 
   const handleStatusUpdate = async (requirementId: string, status: "met" | "unmet" | "review") => {
     setUpdating(requirementId);
-    try {
-      await updateRequirementStatus(id, requirementId, status);
-      setRequirements((prev) =>
-        prev.map((req) => (req.id === requirementId ? { ...req, status } : req))
-      );
-      const complianceScore = await getComplianceScore(id);
-      setScore(complianceScore);
-    } catch (err) {
-      console.error("Failed to update requirement status:", err);
-    } finally {
-      setUpdating(null);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    setUpdating(null);
   };
 
   const getStatusVariant = (status: string) => {
@@ -85,14 +107,6 @@ export default function QualificationPage({
         return "default";
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -142,7 +156,7 @@ export default function QualificationPage({
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <Badge variant={score.go_no_go === "go" ? "success" : score.go_no_go === "no-go" ? "error" : "warning"} size="md">
+              <Badge variant={score.go_no_go === "go" ? "success" : score.go_no_go === "no-go" ? "error" : "warning"}>
                 {score.go_no_go === "go" ? "GO" : score.go_no_go === "no-go" ? "NO-GO" : "REVIEW"}
               </Badge>
               <p className="text-[10px] uppercase tracking-wider font-bold text-[#737686] mt-1">Recommendation</p>
@@ -151,7 +165,7 @@ export default function QualificationPage({
         </div>
       )}
 
-      <Card padding="none">
+      <Card>
         <div className="p-6 border-b border-[#C3C6D7]/20">
           <h2 className="font-headline text-lg font-bold text-[#131B2E]">Requirements Checklist</h2>
         </div>
@@ -166,7 +180,7 @@ export default function QualificationPage({
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={getStatusVariant(req.status)} size="sm">
+                      <Badge variant={getStatusVariant(req.status)}>
                         {req.status}
                       </Badge>
                     </div>

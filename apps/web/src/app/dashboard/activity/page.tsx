@@ -1,19 +1,94 @@
-import { getSystemHealth, getActivityLogs, getMessagingTopology } from "@/lib/api/system";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/utils";
+import type { ActivityLog, SystemHealth } from "@/types";
 
-export default async function ActivityPage() {
-  const [healthResult, logsResult, topologyResult] = await Promise.allSettled([
-    getSystemHealth(),
-    getActivityLogs({ page: 1, page_size: 20 }),
-    getMessagingTopology(),
-  ]);
+const mockHealth: SystemHealth = {
+  status: "healthy",
+  services: {
+    database: { status: "up", latency_ms: 12 },
+    rabbitmq: { status: "up", latency_ms: 5 },
+    redis: { status: "up", latency_ms: 2 },
+  },
+  checked_at: "2024-04-21T10:00:00Z",
+};
 
-  const health = healthResult.status === "fulfilled" ? healthResult.value : null;
-  const logs = logsResult.status === "fulfilled" ? logsResult.value.items : [];
-  const topology = topologyResult.status === "fulfilled" ? topologyResult.value : null;
+const mockLogs: ActivityLog[] = [
+  {
+    id: "1",
+    tender_id: "1",
+    action: "Tender uploaded",
+    details: "RFP-2024-001_IT_Services.pdf uploaded successfully",
+    created_at: "2024-04-15T10:30:00Z",
+  },
+  {
+    id: "2",
+    tender_id: "1",
+    action: "Document processed",
+    details: "PDF parsed and indexed - 45 pages extracted",
+    created_at: "2024-04-15T10:32:00Z",
+  },
+  {
+    id: "3",
+    tender_id: "1",
+    action: "Qualification complete",
+    details: "Compliance check completed - 83% eligibility score",
+    created_at: "2024-04-15T11:45:00Z",
+  },
+  {
+    id: "4",
+    tender_id: "1",
+    action: "Response generated",
+    details: "AI-generated draft response created",
+    created_at: "2024-04-15T14:00:00Z",
+  },
+  {
+    id: "5",
+    tender_id: "1",
+    action: "Export created",
+    details: "PDF export downloaded",
+    created_at: "2024-04-15T15:00:00Z",
+  },
+  {
+    id: "6",
+    tender_id: "2",
+    action: "Tender uploaded",
+    details: "RFP-2024-002_Facility_Management.pdf uploaded",
+    created_at: "2024-04-18T09:15:00Z",
+  },
+  {
+    id: "7",
+    tender_id: "3",
+    action: "Tender uploaded",
+    details: "RFP-2024-003_Consulting_Services.pdf uploaded",
+    created_at: "2024-04-20T08:00:00Z",
+  },
+  {
+    id: "8",
+    action: "Profile updated",
+    details: "Company profile information updated",
+    created_at: "2024-04-20T10:30:00Z",
+  },
+];
+
+const mockTopology = {
+  queues: [
+    { name: "document.process", messages: 0, consumers: 2 },
+    { name: "qualification.check", messages: 0, consumers: 1 },
+    { name: "response.generate", messages: 1, consumers: 1 },
+    { name: "rag.query", messages: 2, consumers: 1 },
+  ],
+  exchanges: [
+    { name: "documents", type: "topic" },
+    { name: "compliance", type: "fanout" },
+    { name: "responses", type: "direct" },
+  ],
+};
+
+export default function ActivityPage() {
+  const health = mockHealth;
+  const logs = mockLogs;
+  const topology = mockTopology;
 
   const getServiceStatusVariant = (status: string) => {
     return status === "up" ? "success" : "error";
@@ -79,11 +154,7 @@ export default async function ActivityPage() {
               </CardContent>
             </Card>
           </>
-        ) : (
-          <div className="col-span-4 flex justify-center py-8">
-            <Spinner size="lg" />
-          </div>
-        )}
+        ) : null}
       </div>
 
       {topology && (
@@ -98,7 +169,7 @@ export default async function ActivityPage() {
                     <div key={queue.name} className="flex items-center justify-between p-3 bg-[#F2F3FF] rounded-lg">
                       <span className="text-sm font-mono text-[#131B2E]">{queue.name}</span>
                       <div className="flex items-center gap-4">
-                        <Badge variant="info" size="sm">{queue.messages} messages</Badge>
+                        <Badge variant="info">{queue.messages} messages</Badge>
                         <span className="text-xs text-[#737686]">{queue.consumers} consumers</span>
                       </div>
                     </div>
@@ -111,7 +182,7 @@ export default async function ActivityPage() {
                   {topology.exchanges.map((exchange) => (
                     <div key={exchange.name} className="flex items-center justify-between p-3 bg-[#F2F3FF] rounded-lg">
                       <span className="text-sm font-mono text-[#131B2E]">{exchange.name}</span>
-                      <Badge variant="default" size="sm">{exchange.type}</Badge>
+                      <Badge variant="default">{exchange.type}</Badge>
                     </div>
                   ))}
                 </div>
@@ -121,7 +192,7 @@ export default async function ActivityPage() {
         </Card>
       )}
 
-      <Card padding="none">
+      <Card>
         <div className="p-6 border-b border-[#C3C6D7]/20">
           <h2 className="font-headline text-lg font-bold text-[#131B2E]">Recent Activity</h2>
         </div>

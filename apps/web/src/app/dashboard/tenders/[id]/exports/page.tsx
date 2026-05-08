@@ -1,8 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { useState, useEffect } from "react";
-import { getExports, createExport, getExportDownloadUrl } from "@/lib/api/exports";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,53 +9,68 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/utils";
 import type { Export } from "@/types";
 
+const mockExports: Export[] = [
+  {
+    id: "1",
+    tender_id: "1777415229182",
+    type: "pdf",
+    status: "completed",
+    filename: "New_Tender_1777415229182_Response.pdf",
+    created_at: "2024-04-15T15:00:00Z",
+    download_url: "/exports/1/download",
+  },
+  {
+    id: "2",
+    tender_id: "1777415229182",
+    type: "docx",
+    status: "completed",
+    filename: "New_Tender_1777415229182_Response.docx",
+    created_at: "2024-04-15T14:30:00Z",
+    download_url: "/exports/2/download",
+  },
+  {
+    id: "3",
+    tender_id: "1777415229182",
+    type: "xlsx",
+    status: "completed",
+    filename: "New_Tender_1777415229182_Compliance_Checklist.xlsx",
+    created_at: "2024-04-15T14:00:00Z",
+    download_url: "/exports/3/download",
+  },
+];
+
 export default function ExportsPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const [exports, setExports] = useState<Export[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [exports, setExports] = useState<Export[]>(mockExports);
   const [creating, setCreating] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchExports = async () => {
-      try {
-        const response = await getExports(id);
-        setExports(response.items);
-      } catch (err) {
-        console.error("Failed to load exports:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchExports();
-  }, [id]);
-
   const handleCreateExport = async (type: "pdf" | "docx" | "xlsx") => {
     setCreating(type);
-    try {
-      const newExport = await createExport(id, type);
-      setExports((prev) => [newExport, ...prev]);
-    } catch (err) {
-      console.error("Failed to create export:", err);
-    } finally {
-      setCreating(null);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    
+    const newExport: Export = {
+      id: Date.now().toString(),
+      tender_id: id,
+      type,
+      status: "completed",
+      filename: `RFP-2024-001_Response_${type.toUpperCase()}_${Date.now()}.${type}`,
+      created_at: new Date().toISOString(),
+      download_url: `/exports/${Date.now()}/download`,
+    };
+    
+    setExports([newExport, ...exports]);
+    setCreating(null);
   };
 
   const handleDownload = async (exportItem: Export) => {
     setDownloading(exportItem.id);
-    try {
-      const url = getExportDownloadUrl(exportItem.id);
-      window.open(url, "_blank");
-    } catch (err) {
-      console.error("Failed to download export:", err);
-    } finally {
-      setDownloading(null);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    setDownloading(null);
   };
 
   const getStatusVariant = (status: string) => {
@@ -99,14 +113,6 @@ export default function ExportsPage({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -130,7 +136,7 @@ export default function ExportsPage({
                 <div className="w-12 h-12 rounded-xl bg-[#EAEDFF] flex items-center justify-center text-[#004AC6]">
                   {getTypeIcon(format.type)}
                 </div>
-                <Badge variant="info" size="sm">{format.type.toUpperCase()}</Badge>
+                <Badge variant="info">{format.type.toUpperCase()}</Badge>
               </div>
               <h3 className="font-headline text-base font-bold text-[#131B2E] mb-1">{format.label}</h3>
               <p className="text-sm text-[#434655] mb-4">{format.desc}</p>
@@ -160,7 +166,7 @@ export default function ExportsPage({
         ))}
       </div>
 
-      <Card padding="none">
+      <Card>
         <div className="p-6 border-b border-[#C3C6D7]/20">
           <h2 className="font-headline text-lg font-bold text-[#131B2E]">Export History</h2>
         </div>
@@ -182,7 +188,7 @@ export default function ExportsPage({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={getStatusVariant(exportItem.status)} size="sm">
+                  <Badge variant={getStatusVariant(exportItem.status)}>
                     {exportItem.status}
                   </Badge>
                   {exportItem.status === "completed" && (

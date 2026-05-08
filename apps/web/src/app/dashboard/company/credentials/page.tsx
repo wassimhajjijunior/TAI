@@ -113,7 +113,7 @@ export default function CredentialsPage() {
         </Card>
       </div>
 
-      <Card padding="none">
+      <Card>
         <div className="p-6 border-b border-[#C3C6D7]/20">
           <h2 className="font-headline text-lg font-bold text-[#131B2E]">Your Credentials</h2>
         </div>
@@ -142,7 +142,7 @@ export default function CredentialsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={getStatusVariant(credential.status)} size="sm">
+                  <Badge variant={getStatusVariant(credential.status)}>
                     {getStatusLabel(credential.status)}
                   </Badge>
                   <Button variant="ghost" size="sm">

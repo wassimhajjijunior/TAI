@@ -71,7 +71,7 @@ export function ConfirmModal({
   loading = false,
 }: ConfirmModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title={title>
       <p className="text-sm text-[#434655] mb-6">{message}</p>
       <div className="flex gap-3 justify-end">
         <button

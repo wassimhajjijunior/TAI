@@ -1,8 +1,6 @@
 "use client";
 
-import { use } from "react";
-import { useState, useEffect } from "react";
-import { getDraftResponses, generateDraftResponse, updateDraftResponse, deleteDraftResponse } from "@/lib/api/responses";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,96 +9,114 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/utils";
 import type { DraftResponse } from "@/types";
 
+const mockResponses: DraftResponse[] = [
+  {
+    id: "1",
+    tender_id: "1777415229182",
+    filename: "New_Tender_1777415229182_Response_v3.docx",
+    content: `EXECUTIVE SUMMARY
+
+We are pleased to submit our comprehensive proposal for the IT Infrastructure & Managed Services tender. Our solution leverages 15+ years of experience delivering enterprise-grade IT services to government and private sector clients.
+
+KEY STRENGTHS:
+- 99.9% SLA compliance across all managed services
+- ISO 27001 certified security operations
+- 24/7 NOC and SOC support
+- Local presence with 150+ certified engineers
+
+OUR APPROACH:
+We propose a phased implementation strategy ensuring zero disruption to existing operations while modernizing your IT infrastructure...`,
+    version: 3,
+    created_at: "2024-04-15T14:00:00Z",
+    updated_at: "2024-04-15T16:30:00Z",
+    edited_by: "john.doe@company.com",
+  },
+  {
+    id: "2",
+    tender_id: "1777415229182",
+    filename: "New_Tender_1777415229182_Response_v2.docx",
+    content: `EXECUTIVE SUMMARY (Version 2)
+
+Enhanced proposal with updated pricing structure and expanded service catalog based on clarification meeting dated April 14, 2024.
+
+CHANGES FROM V1:
+- Added disaster recovery site in secondary region
+- Extended warranty period from 3 to 5 years
+- Included complimentary training program for 50 staff
+- Revised pricing with 12% discount for 3-year commitment...`,
+    version: 2,
+    created_at: "2024-04-15T11:00:00Z",
+    updated_at: "2024-04-15T12:15:00Z",
+  },
+  {
+    id: "3",
+    tender_id: "1777415229182",
+    filename: "New_Tender_1777415229182_Response_v1.docx",
+    content: `INITIAL DRAFT
+
+First draft of response document. Requires review by legal and technical teams.
+
+Sections to complete:
+- Section 3.2: Technical architecture diagrams
+- Section 5.1: Pricing breakdown
+- Section 7: Case studies and references
+- Appendix B: Staff CVs...`,
+    version: 1,
+    created_at: "2024-04-15T10:30:00Z",
+    updated_at: "2024-04-15T10:45:00Z",
+  },
+];
+
 export default function ResponsePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
-  const [responses, setResponses] = useState<DraftResponse[]>([]);
-  const [selectedResponse, setSelectedResponse] = useState<DraftResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [responses, setResponses] = useState<DraftResponse[]>(mockResponses);
+  const [selectedResponse, setSelectedResponse] = useState<DraftResponse>(mockResponses[0]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState("");
-
-  useEffect(() => {
-    const fetchResponses = async () => {
-      try {
-        const data = await getDraftResponses(id);
-        setResponses(data);
-        if (data.length > 0 && !selectedResponse) {
-          setSelectedResponse(data[0]);
-          setEditContent(data[0].content);
-        }
-      } catch (err) {
-        console.error("Failed to load responses:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchResponses();
-  }, [id]);
-
-  useEffect(() => {
-    if (selectedResponse) {
-      setEditContent(selectedResponse.content);
-    }
-  }, [selectedResponse]);
+  const [editContent, setEditContent] = useState(mockResponses[0].content);
 
   const handleGenerate = async () => {
     setGenerating(true);
-    try {
-      const newResponse = await generateDraftResponse(id);
-      const data = await getDraftResponses(id);
-      setResponses(data);
-      setSelectedResponse(newResponse);
-    } catch (err) {
-      console.error("Failed to generate response:", err);
-    } finally {
-      setGenerating(false);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const newResponse: DraftResponse = {
+      id: (Date.now()).toString(),
+      tender_id: "1777415229182",
+      filename: `New_Tender_1777415229182_Response_v${responses.length + 1}.docx`,
+      content: `AI-Generated Response Draft\n\nThis is a mock response generated for demonstration purposes.\n\nThe full response would include:\n- Executive summary\n- Technical approach\n- Implementation timeline\n- Pricing structure\n- Team qualifications\n- Case studies`,
+      version: responses.length + 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setResponses([newResponse, ...responses]);
+    setSelectedResponse(newResponse);
+    setEditContent(newResponse.content);
+    setGenerating(false);
   };
 
   const handleSave = async () => {
-    if (!selectedResponse) return;
     setSaving(true);
-    try {
-      await updateDraftResponse(id, selectedResponse.id, editContent);
-      const data = await getDraftResponses(id);
-      setResponses(data);
-      setSelectedResponse((prev) => prev ? { ...prev, content: editContent } : null);
-    } catch (err) {
-      console.error("Failed to save response:", err);
-    } finally {
-      setSaving(false);
-    }
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    setResponses(prev =>
+      prev.map(r => r.id === selectedResponse.id ? { ...r, content: editContent, updated_at: new Date().toISOString() } : r)
+    );
+    setSaving(false);
   };
 
   const handleDelete = async (responseId: string) => {
     setDeleting(responseId);
-    try {
-      await deleteDraftResponse(id, responseId);
-      const data = await getDraftResponses(id);
-      setResponses(data);
-      if (selectedResponse?.id === responseId) {
-        setSelectedResponse(data.length > 0 ? data[0] : null);
-      }
-    } catch (err) {
-      console.error("Failed to delete response:", err);
-    } finally {
-      setDeleting(null);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const newResponses = responses.filter(r => r.id !== responseId);
+    setResponses(newResponses);
+    if (selectedResponse?.id === responseId) {
+      setSelectedResponse(newResponses[0] || null);
+      setEditContent(newResponses[0]?.content || "");
     }
+    setDeleting(null);
   };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -129,7 +145,7 @@ export default function ResponsePage({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card padding="none" className="lg:col-span-1">
+        <Card className="lg:col-span-1">
           <div className="p-4 border-b border-[#C3C6D7]/20">
             <h2 className="font-headline text-sm font-bold text-[#131B2E]">Saved Drafts</h2>
           </div>
@@ -145,7 +161,18 @@ export default function ResponsePage({
                   className={`p-4 cursor-pointer hover:bg-[#F2F3FF] transition-colors ${
                     selectedResponse?.id === response.id ? "bg-[#F2F3FF]" : ""
                   }`}
-                  onClick={() => setSelectedResponse(response)}
+                  onClick={() => {
+                    setSelectedResponse(response);
+                    setEditContent(response.content);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      setSelectedResponse(response);
+                      setEditContent(response.content);
+                    }
+                  }}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -160,6 +187,7 @@ export default function ResponsePage({
                       }}
                       className="p-1 text-[#737686] hover:text-[#BA1A1A] transition-colors"
                       disabled={deleting === response.id}
+                      aria-label="Delete draft"
                     >
                       {deleting === response.id ? (
                         <Spinner size="sm" />

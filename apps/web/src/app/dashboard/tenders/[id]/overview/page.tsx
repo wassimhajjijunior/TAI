@@ -1,9 +1,136 @@
-import { getTender } from "@/lib/api/tenders";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { formatDate, formatBytes, getStatusLabel } from "@/lib/utils";
+import type { Tender } from "@/types";
+
+const mockTenders: Record<string, Tender> = {
+  "1": {
+    id: "1",
+    filename: "RFP-2024-001_IT_Services.pdf",
+    status: "completed",
+    created_at: "2024-04-15T10:30:00Z",
+    updated_at: "2024-04-15T14:22:00Z",
+    page_count: 45,
+    file_size: 2500000,
+    metadata: {
+      title: "IT Infrastructure & Managed Services Tender",
+      authority: "Ministry of Digital Transformation",
+      reference_number: "RFP-2024-001-MDT",
+      submission_date: "2024-05-30T23:59:00Z",
+      risk_rating: "moderate",
+    },
+  },
+  "2": {
+    id: "2",
+    filename: "RFP-2024-002_Facility_Management.pdf",
+    status: "qualified",
+    created_at: "2024-04-18T09:15:00Z",
+    updated_at: "2024-04-19T11:45:00Z",
+    page_count: 32,
+    file_size: 1800000,
+    metadata: {
+      title: "Facility Management & Maintenance Services",
+      authority: "National Housing Authority",
+      reference_number: "RFP-2024-002-NHA",
+      submission_date: "2024-06-15T23:59:00Z",
+      risk_rating: "low",
+    },
+  },
+  "3": {
+    id: "3",
+    filename: "RFP-2024-003_Consulting_Services.pdf",
+    status: "reading",
+    created_at: "2024-04-20T08:00:00Z",
+    updated_at: "2024-04-20T08:05:00Z",
+    page_count: 28,
+    file_size: 1500000,
+  },
+  "4": {
+    id: "4",
+    filename: "EU_Tender_2024_Logistics.pdf",
+    status: "failed",
+    created_at: "2024-04-10T13:20:00Z",
+    updated_at: "2024-04-10T15:30:00Z",
+    page_count: 67,
+    file_size: 3200000,
+    metadata: {
+      title: "EU Logistics & Supply Chain Management",
+      authority: "European Commission - DG MOVE",
+      reference_number: "EU-2024-LOG-042",
+      submission_date: "2024-04-25T17:00:00Z",
+      risk_rating: "high",
+    },
+  },
+  "5": {
+    id: "5",
+    filename: "Qatar_Airport_Services_2024.pdf",
+    status: "generating",
+    created_at: "2024-04-21T10:00:00Z",
+    updated_at: "2024-04-21T10:15:00Z",
+    page_count: 52,
+    file_size: 2800000,
+    metadata: {
+      title: "Hamad International Airport - Ground Handling Services",
+      authority: "Qatar Civil Aviation Authority",
+      reference_number: "QCAA-2024-GH-018",
+      submission_date: "2024-07-01T23:59:00Z",
+      risk_rating: "moderate",
+    },
+  },
+  "6": {
+    id: "6",
+    filename: "Singapore_HDB_Construction_2024.pdf",
+    status: "indexing",
+    created_at: "2024-04-22T08:00:00Z",
+    updated_at: "2024-04-22T08:10:00Z",
+    page_count: 89,
+    file_size: 4500000,
+    metadata: {
+      title: "HDB Residential Construction Project - Phase 12",
+      authority: "Housing & Development Board Singapore",
+      reference_number: "HDB-2024-CON-089",
+      submission_date: "2024-08-30T17:00:00Z",
+      risk_rating: "low",
+    },
+  },
+  "7": {
+    id: "7",
+    filename: "Dubai_Metro_Phase_4_Tender.pdf",
+    status: "qualified",
+    created_at: "2024-04-19T14:30:00Z",
+    updated_at: "2024-04-20T09:00:00Z",
+    page_count: 156,
+    file_size: 7800000,
+    metadata: {
+      title: "Dubai Metro Phase 4 - Rail Extension & Station Works",
+      authority: "Dubai Roads & Transport Authority",
+      reference_number: "RTA-2024-METRO-P4",
+      submission_date: "2024-09-15T23:59:00Z",
+      risk_rating: "high",
+    },
+  },
+};
+
+function createNewTender(id: string): Tender {
+  const timestamp = parseInt(id) || Date.now();
+  return {
+    id,
+    filename: `New_Tender_${timestamp}.pdf`,
+    status: "completed",
+    created_at: new Date(timestamp).toISOString(),
+    updated_at: new Date(timestamp + 3600000).toISOString(),
+    page_count: Math.floor(Math.random() * 50) + 20,
+    file_size: Math.floor(Math.random() * 3000000) + 500000,
+    metadata: {
+      title: "Newly Uploaded Tender Document",
+      authority: "Demo Authority",
+      reference_number: `DEMO-${timestamp}`,
+      submission_date: new Date(timestamp + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      risk_rating: "low",
+    },
+  };
+}
 
 export default async function TenderOverviewPage({
   params,
@@ -11,34 +138,7 @@ export default async function TenderOverviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  let tender;
-  let error: string | null = null;
-
-  try {
-    tender = await getTender(id);
-  } catch (err) {
-    error = err instanceof Error ? err.message : "Failed to load tender";
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="text-center text-[#BA1A1A] py-8">{error}</div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!tender) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  const tender = mockTenders[id] || createNewTender(id);
 
   const getStatusVariant = (status: string) => {
     switch (status) {
@@ -62,7 +162,7 @@ export default async function TenderOverviewPage({
             {tender.filename}
           </h1>
           <div className="flex items-center gap-4 mt-2">
-            <Badge variant={getStatusVariant(tender.status)} size="md">
+            <Badge variant={getStatusVariant(tender.status)}>
               {getStatusLabel(tender.status)}
             </Badge>
             <span className="text-sm text-[#737686]">
@@ -170,7 +270,7 @@ export default async function TenderOverviewPage({
               {tender.metadata.risk_rating && (
                 <div>
                   <p className="text-[10px] uppercase tracking-wider font-bold text-[#737686] mb-1">Risk Rating</p>
-                  <Badge variant={tender.metadata.risk_rating === "high" ? "error" : tender.metadata.risk_rating === "moderate" ? "warning" : "success"} size="sm">
+                  <Badge variant={tender.metadata.risk_rating === "high" ? "error" : tender.metadata.risk_rating === "moderate" ? "warning" : "success"}>
                     {tender.metadata.risk_rating.toUpperCase()}
                   </Badge>
                 </div>
