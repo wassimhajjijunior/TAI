@@ -874,6 +874,64 @@ def update_response(response_id: str, content: str) -> bool:
     return bool(data)
 
 
+def delete_response(response_id: str) -> bool:
+    client = _get_client()
+    result = (
+        client.table("responses")
+        .delete()
+        .eq("id", response_id)
+        .execute()
+    )
+    data = getattr(result, "data", None)
+    return bool(data)
+
+
+def update_requirement_status(
+    document_id: str,
+    requirement_id: str,
+    status: str,
+    evidence: str,
+) -> RequirementRecord | None:
+    client = _get_client()
+    if status == "met":
+        met_value: bool | None = True
+    elif status == "unmet":
+        met_value = False
+    else:
+        met_value = None
+    payload: dict[str, object] = {"met": met_value}
+    if evidence:
+        payload["actual_value"] = evidence
+    result = (
+        client.table("requirements")
+        .update(payload)
+        .eq("id", requirement_id)
+        .eq("document_id", document_id)
+        .execute()
+    )
+    data = getattr(result, "data", None)
+    if not data:
+        return None
+    item = cast(dict[str, object], data[0])
+    return {
+        "id": str(item.get("id", "")),
+        "document_id": str(item.get("document_id", document_id)),
+        "requirement_text": str(item.get("requirement_text", "")),
+        "requirement_code": str(item.get("requirement_code"))
+        if item.get("requirement_code") is not None
+        else None,
+        "category": str(item.get("category"))
+        if item.get("category") is not None
+        else None,
+        "weight": _to_float(item.get("weight")),
+        "met": _to_bool(item.get("met")),
+        "confidence": _to_float(item.get("confidence")),
+        "actual_value": str(item.get("actual_value"))
+        if item.get("actual_value") is not None
+        else None,
+    }
+
+
 def list_responses(document_id: str) -> list[ResponseRecord]:
     client = _get_client()
     result = (

@@ -105,14 +105,16 @@ def list_document_responses(
 
     from ..core import document_repository
 
-    result = document_repository.list_responses(document_id, limit=limit, offset=offset)
+    records = document_repository.list_responses(document_id)
+    total = len(records)
+    page = records[offset : offset + limit]
 
     return {
         "document_id": document_id,
-        "responses": result["items"],
-        "total": result["total"],
-        "limit": result["limit"],
-        "offset": result["offset"],
+        "responses": page,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 

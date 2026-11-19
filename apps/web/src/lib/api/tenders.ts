@@ -9,11 +9,19 @@ export interface TendersListParams {
 }
 
 export async function getTenders(params?: TendersListParams): Promise<PaginatedResponse<Tender>> {
-  return api.get<PaginatedResponse<Tender>>('/documents', params as Record<string, string | number | undefined>);
+  const response = await api.get<{ items: Tender[] }>('/documents', params as Record<string, string | number | undefined>);
+  const items = response.items ?? [];
+  return {
+    items,
+    total: items.length,
+    page: params?.page ?? 1,
+    page_size: params?.page_size ?? items.length,
+  };
 }
 
 export async function getTender(id: string): Promise<Tender> {
-  return api.get<Tender>(`/documents/${id}`);
+  const response = await api.get<{ document: Tender }>(`/documents/${id}`);
+  return response.document;
 }
 
 export async function uploadTender(formData: FormData): Promise<Tender> {

@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from typing import Mapping
 
 from ..core import document_repository
 
@@ -14,7 +15,7 @@ DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def _transform_requirement(
-    record: dict[str, object],
+    record: Mapping[str, object],
     document_id: str,
 ) -> dict[str, object]:
     met = record.get("met")
@@ -104,7 +105,9 @@ def update_compliance_requirement(
     updated = document_repository.update_requirement_status(
         document_id, requirement_id, status, str(payload.get("evidence", ""))
     )
-    return updated
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    return _transform_requirement(updated, document_id)
 
 
 def run_compliance_check(document_id: str) -> dict[str, str]:

@@ -6,7 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8100'
+  const raw = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8100'
+  const trimmed = raw.replace(/\/+$/, '')
+  return trimmed.endsWith('/api/v1') ? trimmed : `${trimmed}/api/v1`
 }
 
 export function formatBytes(bytes: number): string {

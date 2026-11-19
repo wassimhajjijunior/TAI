@@ -12,7 +12,8 @@ export interface RAGQueryResponse {
 }
 
 export async function getRAGHistory(tenderId: string): Promise<RAGMessage[]> {
-  return api.get<RAGMessage[]>(`/documents/${tenderId}/rag/history`);
+  const response = await api.get<{ messages: RAGMessage[] }>(`/documents/${tenderId}/rag/history`);
+  return response.messages ?? [];
 }
 
 export async function queryRAG(tenderId: string, query: string): Promise<RAGQueryResponse> {
