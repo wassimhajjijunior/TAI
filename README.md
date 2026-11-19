@@ -1,561 +1,466 @@
-# P2M-TAI — Procurement AI Platform
+# P2M-TAI — Procurement Intelligence Platform
 
-Enterprise procurement intelligence platform that automates tender document ingestion, compliance checking, AI-powered response generation, and export — all accessible through a modern web dashboard.
+An AI platform that automates the tender-response lifecycle: ingest a tender document, extract and index its content, evaluate compliance, answer questions with retrieval-augmented generation, draft a grounded response, and export a submittable DOCX.
+
+![status](https://img.shields.io/badge/status-active-blue)
+![backend](https://img.shields.io/badge/backend-FastAPI-009688)
+![frontend](https://img.shields.io/badge/frontend-Next.js%2016-black)
+![db](https://img.shields.io/badge/database-Supabase%20%2B%20pgvector-3ECF8E)
+![queue](https://img.shields.io/badge/async-RabbitMQ-FF6600)
 
 ---
 
 ## Table of Contents
 
-1. [Purpose & Vision](#1-purpose--vision)
-2. [Architecture Overview](#2-architecture-overview)
-3. [Tech Stack](#3-tech-stack)
-4. [Repository Structure](#4-repository-structure)
-5. [Quick Start (Docker)](#5-quick-start-docker)
-6. [Quick Start (Local Development)](#6-quick-start-local-development)
-7. [Docker Setup](#7-docker-setup)
-8. [API Contract](#8-api-contract)
-9. [Core Flows](#9-core-flows)
-10. [Environment Variables](#10-environment-variables)
-11. [Workers & Processing Pipeline](#11-workers--processing-pipeline)
-12. [Frontend Routes](#12-frontend-routes)
-13. [Troubleshooting](#13-troubleshooting)
+- [Overview](#overview)
+- [Problem](#problem)
+- [Solution](#solution)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Processing Pipeline](#processing-pipeline)
+- [Technology Stack](#technology-stack)
+- [Repository Structure](#repository-structure)
+- [Data Model](#data-model)
+- [API Reference](#api-reference)
+- [Core Flows](#core-flows)
+- [Frontend Routes](#frontend-routes)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Project Status](#project-status)
+- [Roadmap](#roadmap)
+- [Verification](#verification)
+- [Design Decisions](#design-decisions)
+- [Author](#author)
 
 ---
 
-## 1. Purpose & Vision
+## Overview
 
-P2M-TAI automates the end-to-end lifecycle of government/corporate tender responses:
+**P2M-TAI** turns a tender PDF into a structured, actionable bid workspace. It combines a deterministic rules engine with retrieval-augmented generation (RAG) and large language models to reduce the manual effort of reading, qualifying, and answering procurement documents.
 
-- **Ingestion** — Upload tender PDFs; pipeline extracts text (OCR), detects language, segments into sentences, translates FR→EN chunks, and generates vector embeddings.
-- **Compliance** — Rules + LLM hybrid engine evaluates tender requirements against company profile, produces an eligibility score and per-clause met/unmet/review determination.
-- **RAG Query** — Semantic search over embedded chunks to ground answers in source documents.
-- **Response Generation** — AI-generated draft responses organized by section (technical, financial, administrative), with citations.
-- **Export** — Generate formatted DOCX responses for submission.
+The system is a modern monorepo:
 
-The platform uses Supabase (Postgres + pgvector) for persistence, RabbitMQ for async pipeline event choreography, and a Next.js frontend for human interaction.
+- **`apps/web`** — Next.js 16 (App Router) dashboard.
+- **`apps/api`** — FastAPI backend with an event-driven document-processing pipeline.
+- **`packages/*`** — shared TypeScript types and UI primitives.
 
----
-
-## 2. Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Browser / Client                              │
-│                    Next.js (Port 3000)                               │
-│  Sidebar Nav │ Dashboard │ Tenders │ Company │ Activity             │
-└──────────┬───────────────────────────────────────┬──────────────────┘
-           │                                       │
-    HTTP/REST (JSON)                    WebSocket (optional)
-           │                                       │
-┌──────────▼──────────────────────────────────────▼──────────────────┐
-│                      FastAPI Backend (Port 8100)                      │
-│                                                                       │
-│  Routers:                                                            │
-│    documents.py   — upload, list, get, delete                        │
-│    compliance.py  — per-document requirements & scores               │
-│    company.py     — profile & annexes                                │
-│    rag.py         — semantic query                                    │
-│    generate.py    — response generation                               │
-│    export.py      — DOCX export creation & download                  │
-│    system.py      — health, activity, messaging topology               │
-│                                                                       │
-│  All routes prefixed: /api/v1/*  (see API Contract below)           │
-└──────────┬───────────────┬──────────────────┬──────────────────────┘
-           │               │                  │
-     ┌─────▼─────┐  ┌──────▼──────┐  ┌───────▼──────┐
-     │ Supabase  │  │  RabbitMQ   │  │    Redis     │
-     │ Postgres  │  │  (async)    │  │   (cache)    │
-     │ +pgvector │  │  Port 5672  │  │  Port 6400   │
-     └───────────┘  └─────────────┘  └──────────────┘
-```
-
-### Processing Pipeline (Async Workers)
-
-```
-Document Upload
-      │
-      ▼
-document_uploaded ──► OCR Worker (Mistral AI)
-      │                     │
-      │                ocr_complete
-      │                     │
-      ▼                     ▼
-NLP Worker (spaCy + deep-translator)
-      │
-      │ nlp_completed
-      ▼
-Embedding Worker (BGE-M3 / Hugging Face)
-      │
-      │ embedding_complete
-      ▼
-Compliance Worker (rules + LLM adjudication)
-      │
-      │ compliance_completed
-      ▼
-Notification Worker (SendGrid) ──► Email on high-score tenders
-```
+The backend is organized as a **modular monolith** with nine isolated service domains plus asynchronous workers, backed by Supabase (Postgres + `pgvector`), RabbitMQ, and Redis.
 
 ---
 
-## 3. Tech Stack
+## Problem
+
+Procurement teams responding to tenders face a costly, error-prone workflow:
+
+- Tender documents are long, heterogeneous (PDF, scans, multi-language) and dense with legal clauses.
+- Eligibility requirements must be checked manually against company credentials.
+- Drafting a compliant, well-structured response takes days per bid.
+- Knowledge is locked in documents — answering a single question requires re-reading hundreds of pages.
+
+The result: low win rates, missed deadlines, compliance failures, and high labor cost per bid.
+
+## Solution
+
+P2M-TAI applies a hybrid AI pipeline:
+
+1. **Ingest** — parse and OCR the tender; detect language; chunk and embed content.
+2. **Qualify** — evaluate requirements with a rules engine and produce an eligibility score.
+3. **Retrieve** — ground every answer in the source via vector search (`pgvector`).
+4. **Generate** — draft responses with an LLM using retrieved context and citations.
+5. **Export** — produce a formatted DOCX ready for submission.
+
+---
+
+## Key Features
+
+- **Document ingestion** — PDF/DOCX upload, OCR via Mistral, artifact storage.
+- **Multilingual NLP** — language detection (`langdetect`), sentence-aware chunking (`chonkie`), FR→EN translation (`deep-translator`).
+- **Vector search** — BGE-M3 embeddings (1024-dim) in Supabase `pgvector`, HNSW-indexed, `match_chunks` RPC.
+- **Compliance engine** — rules-based requirement evaluation with eligibility score and go/no-go recommendation.
+- **RAG Q&A** — ask questions, get grounded answers with page/section citations.
+- **Response generation** — LLM drafts (`llama-3.3-70b` via Groq) organized by section, with citations.
+- **DOCX export** — `python-docx`-generated submission document with metadata, sections, and footer.
+- **Async choreography** — RabbitMQ event pipeline linking OCR → NLP → Embedding → Compliance → Notification.
+- **Observability-ready** — health checks across Supabase, RabbitMQ, and Redis; live document status via WebSocket.
+- **Modern UI** — Next.js 16, Tailwind v4, accessible component system.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                          Browser (Client)                             │
+│                 Next.js 16 App Router  ·  Port 3000                    │
+│   Sidebar · Dashboard · Tenders · Qualification · Response · Ask       │
+└───────────────┬───────────────────────────────────────┬──────────────┘
+                │  HTTP/REST (/api/v1)                   │  WebSocket
+                ▼                                        ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      FastAPI Backend  ·  Port 8100                     │
+│                                                                        │
+│  Routers (/api/v1):                                                    │
+│    documents   compliance   company   rag   generate   export   system │
+│                                                                        │
+│  Services (modular monolith):                                          │
+│    ingestion  ocr  nlp  embedding  compliance  rag  llm  export  notif │
+│                                                                        │
+│  Core: document_repository (Supabase REST) · rabbitmq · file_storage   │
+└───────┬─────────────────────┬─────────────────────┬──────────────────┘
+        │                     │                     │
+        ▼                     ▼                     ▼
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│   Supabase    │     │   RabbitMQ    │     │     Redis     │
+│ Postgres 15   │     │  p2m.events   │     │  cache/state  │
+│  + pgvector   │     │  5672/15672   │     │    6400       │
+└───────────────┘     └───────────────┘     └───────────────┘
+```
+
+**Layering principle:** routers handle HTTP only; services hold domain logic; `core` provides cross-cutting infrastructure (repository, messaging, storage). Workers consume broker events and advance document state independently of the API server.
+
+---
+
+## Processing Pipeline
+
+Documents flow through an asynchronous, event-driven pipeline. Each worker consumes one event and publishes the next:
+
+```
+  Upload
+    │  POST /api/v1/documents
+    ▼
+ingestion ──► document_uploaded
+                   │
+                   ▼
+             ocr (Mistral OCR) ──► ocr_complete
+                   │
+                   ▼
+             nlp (spaCy · chonkie · translate) ──► nlp_completed
+                   │
+                   ▼
+             embedding (BGE-M3 · 1024-dim) ──► embedding_complete
+                   │
+                   ▼
+             compliance (rules + score) ──► compliance_completed
+                   │
+                   ▼
+             notification (SendGrid)   ──► email on qualified tenders
+```
+
+Document status transitions:
+
+```
+uploaded → reading → indexing → qualifying → qualified → generating → completed
+                                                              └────────► failed
+```
+
+Workers run as independent processes (`python -m src.services.<domain>.run_worker`), decoupled from the FastAPI server.
+
+---
+
+## Technology Stack
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui |
-| Backend | FastAPI (Python 3.11), Uvicorn |
-| Database | Supabase (Postgres 15 + pgvector) |
-| Message Broker | RabbitMQ 3-management |
-| Cache | Redis 7 |
-| AI/ML | Hugging Face BGE-M3 embeddings, Mistral OCR, LLM generation |
-| Container Runtime | Docker + Docker Compose |
+| **Frontend** | Next.js 16 (App Router), React, TypeScript, Tailwind CSS v4, shadcn/ui (Base UI), Lucide icons |
+| **Backend** | FastAPI (Python 3.11+), Uvicorn, Pydantic |
+| **AI / OCR** | Mistral OCR (`mistral-ocr-latest`) |
+| **AI / LLM** | Groq (`llama-3.3-70b-versatile`) |
+| **AI / Embeddings** | Hugging Face `BAAI/bge-m3` (1024-dim) via LangChain |
+| **NLP** | spaCy, Chonkie (chunking), langdetect, deep-translator |
+| **RAG** | LangChain + Supabase `pgvector` (`match_chunks` RPC, HNSW) |
+| **Database** | Supabase (Postgres 15 + pgvector) via PostgREST |
+| **Messaging** | RabbitMQ (`pika`) |
+| **Cache** | Redis |
+| **Export** | python-docx |
+| **Email** | SendGrid |
+| **Infra** | Docker, Docker Compose |
 
 ---
 
-## 4. Repository Structure
+## Repository Structure
 
 ```
 P2M-TAI/
-├── docker-compose.app.yml          # Full stack compose (web + api + rabbitmq + redis)
 ├── apps/
-│   ├── api/                        # FastAPI backend
+│   ├── api/                          # FastAPI backend
 │   │   ├── src/
-│   │   │   ├── app.py             # FastAPI app factory, route registration
-│   │   │   ├── routers/           # Route handlers (documents, compliance, etc.)
-│   │   │   ├── core/              # Shared: db client, rabbitmq, file storage
-│   │   │   └── services/          # Worker implementations (ocr, nlp, embedding…)
-│   │   ├── Dockerfile
+│   │   │   ├── app.py                # App factory, CORS, route registration
+│   │   │   ├── routers/              # HTTP layer (documents, compliance, rag, ...)
+│   │   │   ├── core/                 # document_repository, rabbitmq, file_storage
+│   │   │   └── services/             # ocr, nlp, embedding, compliance,
+│   │   │                             #   rag, llm, export, notification, ingestion
+│   │   ├── storage/                  # artifacts & uploaded documents (runtime)
 │   │   ├── requirements.txt
 │   │   └── .env.example
-│   └── web/                        # Next.js frontend
+│   └── web/                          # Next.js frontend
 │       ├── src/
-│       │   ├── app/               # App Router pages
-│       │   │   ├── (auth)/        # Login, register
-│       │   │   └── dashboard/     # Dashboard, tenders, company, activity
-│       │   ├── components/        # UI components + layout (sidebar, shell, topbar)
-│       │   ├── hooks/            # Custom React hooks
-│       │   ├── lib/api/          # Typed API client functions
-│       │   └── types/            # TypeScript interfaces
-│       ├── Dockerfile
-│       ├── .env.example
-│       └── .env.local
+│       │   ├── app/                  # App Router pages (dashboard, tenders, ...)
+│       │   ├── components/           # ui, layout, auth, upload
+│       │   ├── lib/                  # api client, supabase, utils
+│       │   └── types/                # shared TypeScript interfaces
+│       └── .env.example
+├── packages/
+│   ├── shared-types/                 # cross-app TypeScript contracts
+│   └── ui/                           # shared UI primitives
 ├── infra/
-│   └── supabase/
-│       └── migrations/           # Postgres schema migrations
-└── docs/
-    └── design/                   # Architecture & design docs
+│   ├── supabase/migrations/          # 0001–0013 SQL migrations
+│   └── docker/                       # messaging + local supabase compose
+├── docs/                             # architecture, roadmap, devops, testing
+├── docker-compose.app.yml
+└── README.md
 ```
 
 ---
 
-## 5. Quick Start (Docker)
+## Data Model
 
-### Prerequisites
-- Docker Desktop (with compose plugin) installed and running
-- Ports `3000`, `5672`, `6400`, `8100`, `15672` available
+Supabase schema, applied through `infra/supabase/migrations/` (13 versioned migrations):
 
-### Start the full stack
+| Table | Purpose |
+|-------|---------|
+| `tenants` | Tenant isolation root |
+| `documents` | Uploaded tender records + processing status, metadata, `chunk_count` |
+| `chunks` | Extracted text segments + `embedding vector(1024)` (HNSW index) + metadata |
+| `requirements` | Extracted compliance requirements (`met`, `confidence`, `weight`, `actual_value`) |
+| `compliance_reports` | Per-document eligibility score + recommendation |
+| `company_profiles` | Company information used during qualification/generation |
+| `annexes` | Supporting credential documents |
+| `responses` | Generated draft responses + citations |
+| `exports` | Export records + status + storage reference |
+| `notifications` | Email events with idempotency (`event_id` unique index) |
+| `users` | Reserved for auth/ownership |
 
-```bash
-cd P2M-TAI
-docker compose -f docker-compose.app.yml up --build -d
-```
-
-### Verify services
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Frontend | http://localhost:3000 | — |
-| Backend API | http://localhost:8100 | — |
-| API Health | http://localhost:8100/health | — |
-| RabbitMQ Management | http://localhost:15672 | admin / admin |
-| RabbitMQ AMQP | amqp://localhost:5672 | admin / admin |
-| Redis | localhost:6400 | — |
-
-### Check container logs
-
-```bash
-# All containers
-docker compose -f docker-compose.app.yml logs
-
-# API only
-docker compose -f docker-compose.app.yml logs api
-
-# Web only
-docker compose -f docker-compose.app.yml logs web
-```
-
-### Stop the stack
-
-```bash
-docker compose -f docker-compose.app.yml down
-```
+RPC: `match_chunks(document_id, query_embedding, match_count)` — cosine distance (`<=>`), HNSW-accelerated.
 
 ---
 
-## 6. Quick Start (Local Development)
+## API Reference
 
-### Prerequisites
-- Node.js 20+, Python 3.11+
-- Supabase local stack running
-- RabbitMQ + Redis (or via Docker: `docker compose -f infra/docker/messaging/docker-compose.yml up -d`)
-
-### Backend
-
-```bash
-cd apps/api
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
-
-# Configure environment
-copy .env.example .env  # fill in your Supabase credentials
-
-# Start
-uvicorn src.app:app --reload --port 8100
-```
-
-### Frontend
-
-```bash
-cd apps/web
-npm install
-
-# Configure environment
-copy .env.example .env.local
-# Set NEXT_PUBLIC_API_URL=http://localhost:8100
-
-npm run dev
-```
-
-Open http://localhost:3000
-
----
-
-## 7. Docker Setup
-
-### Services
-
-| Container | Image | Ports |
-|-----------|-------|-------|
-| `p2m-web` | `tai-web` (built from `apps/web/Dockerfile`) | `3000:3000` |
-| `p2m-api` | `tai-api` (built from `apps/api/Dockerfile`) | `8100:8100` |
-| `p2m-rabbitmq` | `rabbitmq:3-management` | `5672:5672`, `15672:15672` |
-| `p2m-redis` | `redis:7-alpine` | `6400:6379` |
-
-### Environment injection
-
-The compose file passes these environment variables into each container:
-
-**API container:**
-- `API_ALLOWED_ORIGINS` — comma-separated CORS origins
-- `RABBITMQ_URL` — internal RabbitMQ connection string
-- `REDIS_URL` — internal Redis connection string
-- `WEB_BASE_URL` — frontend base URL (for notifications/links)
-- Values read from `apps/api/.env`
-
-**Web container:**
-- `NEXT_PUBLIC_API_URL=http://api:8100/api/v1` (internal container-to-container)
-- `API_URL=http://api:8100/api/v1`
-
-### Build arguments
-
-When building the web image, `NEXT_PUBLIC_API_URL` can be overridden at build time via the `--build-arg` flag. The production value passed by compose is `http://api:8100/api/v1`.
-
----
-
-## 8. API Contract
-
-All backend routes are prefixed with `/api/v1` by the FastAPI app factory. The frontend API client (`apps/web/src/lib/api/client.ts`) prepends `NEXT_PUBLIC_API_URL` (which in Docker is `http://api:8100/api/v1`), so frontend API functions use **paths without the `/api/v1` prefix** (e.g., `/documents` resolves to `http://api:8100/api/v1/documents`).
+All routes are prefixed with `/api/v1` (except the liveness probe). Interactive docs at `/docs` and `/redoc`.
 
 ### Documents
-
 ```
-POST   /documents                    Upload a tender document
-GET    /documents                    List all documents (paginated)
-GET    /documents/{document_id}      Get document details
-DELETE /documents/{document_id}     Delete a document
-GET    /documents/{document_id}/status         Current processing status
-GET    /documents/{document_id}/requirements   Compliance requirements
-```
-
-**Upload**: `Content-Type: multipart/form-data`, field name `file`, max 20MB.
-
-**List response**:
-```json
-{
-  "items": [{ "id", "filename", "status", "created_at", "updated_at", ... }],
-  "total": 11,
-  "limit": 50,
-  "offset": 0
-}
+POST   /api/v1/documents                       Upload a document (multipart: file)
+GET    /api/v1/documents                       List documents
+GET    /api/v1/documents/{id}                  Get document
+DELETE /api/v1/documents/{id}                  Delete document
+GET    /api/v1/documents/{id}/status           Processing status
+GET    /api/v1/documents/{id}/requirements     Extracted requirements
+GET    /api/v1/documents/{id}/ocr-artifact     OCR artifact
 ```
 
 ### Compliance
-
 ```
-GET    /documents/{document_id}/compliance              Full compliance report
-GET    /documents/{document_id}/compliance/score       Summary score + go/no-go
-POST   /documents/{document_id}/compliance/check        Trigger re-check
-PUT    /documents/{document_id}/compliance/{requirement_id}  Update requirement status
-```
-
-**Compliance response** (`GET /compliance`):
-```json
-{
-  "id": "...",
-  "eligibility_score": 75.0,
-  "recommendation": "Proceed with caution",
-  "requirements": [
-    {
-      "id": "req-1",
-      "tender_id": "doc-id",
-      "clause": "5.2.1",
-      "requirement": "ISO 9001 certification required",
-      "status": "met|unmet|review",
-      "evidence": "Certificate uploaded"
-    }
-  ],
-  "report": { ... }
-}
-```
-
-**Score response** (`GET /compliance/score`):
-```json
-{
-  "id": "...",
-  "eligibility_score": 75.0,
-  "total_requirements": 10,
-  "met_requirements": 7,
-  "recommendation": "Proceed with caution",
-  "go_no_go": "review"
-}
+GET    /api/v1/documents/{id}/compliance                 Full report + requirements
+GET    /api/v1/documents/{id}/compliance/score           Score + go/no-go
+POST   /api/v1/documents/{id}/compliance/check           Trigger re-check
+PUT    /api/v1/documents/{id}/compliance/{req_id}        Update requirement status
 ```
 
 ### Company
-
 ```
-GET    /company/profile             Get company profile
-PUT    /company/profile             Update company profile
-GET    /company/annexes             List annexes
-POST   /company/annexes             Upload an annex
-DELETE /company/annexes/{annex_id}  Delete an annex
+GET    /api/v1/company/profile                 Get profile
+PUT    /api/v1/company/profile                 Update profile
+GET    /api/v1/company/annexes                 List annexes
+POST   /api/v1/company/annexes                 Upload annex
 ```
 
 ### RAG
-
 ```
-POST   /rag/query                             Query document knowledge base
-GET    /documents/{document_id}/rag/history   Get RAG message history
-DELETE /documents/{document_id}/rag/history  Clear RAG history
-```
-
-**RAG query request**:
-```json
-{ "document_id": "...", "query": "What is the deadline?", "top_k": 5 }
+POST   /api/v1/rag/query                        Semantic query (document_id, query, top_k)
+GET    /api/v1/documents/{id}/rag/history       Chat history
+DELETE /api/v1/documents/{id}/rag/history       Clear history
 ```
 
-**RAG query response**:
-```json
-{
-  "document_id": "...",
-  "query": "What is the deadline?",
-  "results": [{ "page": 3, "section": "§5.2", "excerpt": "...", "relevance": 0.92 }],
-  "total_results": 3
-}
+### Response Generation
 ```
-
-### Responses (Generation)
-
-```
-POST   /documents/{document_id}/responses/generate    Trigger response generation
-GET    /documents/{document_id}/responses             List all responses for document
-GET    /documents/{document_id}/responses/{response_id}  Get specific response
-PUT    /documents/{document_id}/responses/{response_id}  Update response content
-DELETE /documents/{document_id}/responses/{response_id}  Delete response
-```
-
-**Generate request**:
-```json
-{ "query": "Generate tender response", "sections": ["technical", "financial", "administrative"] }
+POST   /api/v1/generate/response                          Generate a response
+GET    /api/v1/responses/{id}                             Get response
+PATCH  /api/v1/responses/{id}                             Update response
+GET    /api/v1/documents/{id}/responses                   List responses
+POST   /api/v1/documents/{id}/responses/generate         Generate for document
+GET    /api/v1/documents/{id}/responses/{rid}             Get document response
+PUT    /api/v1/documents/{id}/responses/{rid}             Update document response
+DELETE /api/v1/documents/{id}/responses/{rid}            Delete document response
 ```
 
 ### Export
-
 ```
-POST   /documents/{document_id}/export          Create DOCX export (requires response_id)
-GET    /documents/{document_id}/exports        List exports for document
-GET    /exports/{export_id}                     Get export metadata
-DELETE /exports/{export_id}                     Delete export
-GET    /exports/{export_id}/download            Download export file
-```
-
-**Create export request**:
-```json
-{ "response_id": "...", "format": "docx" }
+POST   /api/v1/documents/{id}/export            Create DOCX export (response_id, format)
+GET    /api/v1/documents/{id}/exports           List exports
+GET    /api/v1/exports/{id}/download            Download export file
 ```
 
 ### System
-
 ```
-GET    /system/health                  Full health check (DB, RabbitMQ, Redis)
-GET    /system/messaging               RabbitMQ connection status
-GET    /system/messaging/topology      Queue and exchange topology
-GET    /system/activity                Activity log (paginated)
-GET    /health                          Simple liveness check
-```
-
-**Health response**:
-```json
-{
-  "status": "ok|degraded|unhealthy",
-  "checks": {
-    "supabase": { "status": "connected" },
-    "rabbitmq": { "status": "connected" },
-    "redis": { "status": "connected" }
-  }
-}
+GET    /api/v1/system/health                    Full health (Supabase, RabbitMQ, Redis)
+GET    /api/v1/system/messaging                 Broker connectivity
+GET    /api/v1/system/messaging/topology        Queues and exchanges
+GET    /api/v1/system/activity                  Activity log
+GET    /health                                  Liveness probe
+WS     /api/v1/live/documents                   Live document status stream
 ```
 
 ---
 
-## 9. Core Flows
+## Core Flows
 
-### Upload → Compliance → Export
+**Upload → Qualify → Export**
+1. `POST /api/v1/documents` saves the file and publishes `document_uploaded`.
+2. OCR → NLP → Embedding workers populate chunks and vectors.
+3. Compliance worker scores requirements and writes `compliance_reports`.
+4. Dashboard shows score and per-clause status at `/dashboard/tenders/{id}/qualification`.
+5. `POST /api/v1/documents/{id}/responses/generate` drafts a response.
+6. `POST /api/v1/documents/{id}/export` renders DOCX; `GET /api/v1/exports/{id}/download` retrieves it.
 
-1. User navigates to `/dashboard/tenders/new`, drops a PDF.
-2. `POST /documents` saves the file, publishes `document_uploaded` to RabbitMQ.
-3. OCR worker extracts text; NLP worker segments/translates; Embedding worker creates vectors.
-4. Compliance worker evaluates requirements; results stored in `compliance_reports` + `requirements` tables.
-5. User opens `/dashboard/tenders/[id]/qualification` to see score + per-clause status.
-6. User opens `/dashboard/tenders/[id]/response` → clicks **Generate Draft** → `POST /documents/{id}/responses/generate`.
-7. User reviews/edits generated response.
-8. User opens `/dashboard/tenders/[id]/exports` → clicks **Create Export** → `POST /documents/{id}/export`.
-9. User downloads DOCX via `GET /exports/{id}/download`.
-
-### RAG Query Flow
-
-1. User opens `/dashboard/tenders/[id]/ask`.
-2. Types a question → `POST /rag/query` with `document_id` and `query`.
-3. Backend embeds the query, searches pgvector for similar chunks, returns grounded answer.
-4. Chat history stored server-side; accessible via `GET /documents/{id}/rag/history`.
-
-### Sidebar Navigation
-
-- **Expanded mode** (default): full-width sidebar (288px) with labels + icons for all nav items.
-- **Collapsed mode**: icon-only sidebar (80px); click the **←** toggle button to collapse/expand.
-- Available in the top bar of any dashboard page.
+**RAG Q&A**
+1. `POST /api/v1/rag/query` embeds the question.
+2. `match_chunks` retrieves the closest chunks.
+3. The LLM answers strictly from retrieved context; sources are returned with page/section.
 
 ---
 
-## 10. Environment Variables
-
-### Backend (`apps/api/.env`)
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
-| `SUPABASE_ANON_KEY` | Supabase anon/public key | `eyJ...` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | `eyJ...` |
-| `API_ALLOWED_ORIGINS` | CORS origins (comma-separated) | `http://localhost:3000` |
-| `RABBITMQ_URL` | RabbitMQ AMQP URL | `amqp://admin:admin@rabbitmq:5672/%2F` |
-| `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
-| `WEB_BASE_URL` | Frontend base URL | `http://localhost:3000` |
-| `MISTRAL_API_KEY` | Mistral AI API key (for OCR) | |
-| `HF_TOKEN` | Hugging Face token (for embeddings + LLM) | |
-
-### Frontend (`apps/web/.env.local`)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL | `http://127.0.0.1:54321` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key | |
-| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:8100` |
-
-> In Docker, `NEXT_PUBLIC_API_URL` is set to `http://api:8100/api/v1` (container-internal).
-
----
-
-## 11. Workers & Processing Pipeline
-
-Workers consume RabbitMQ events and publish back to advance the pipeline. They are **separate processes** that run independently of the FastAPI server.
-
-| Worker | Command | Consumes | Produces |
-|--------|---------|----------|----------|
-| OCR | `python -m apps.api.src.services.ocr.run_worker` | `document_uploaded` | `ocr_complete` |
-| NLP | `python -m apps.api.src.services.nlp.run_worker` | `ocr_complete` | `nlp_completed` |
-| Embedding | `python -m apps.api.src.services.embedding.run_worker` | `nlp_completed` | `embedding_complete` |
-| Compliance | `python -m apps.api.src.services.compliance.run_worker` | `embedding_complete` | `compliance_completed` |
-| Notification | `python -m apps.api.src.services.notification.run_worker` | `compliance_completed` | (email only) |
-| RAG | `python -m apps.api.src.services.rag.worker` | (on-demand, not queued) | |
-| LLM Generation | `python -m apps.api.src.services.llm.worker` | (on-demand, not queued) | |
-| Export | `python -m apps.api.src.services.export.worker` | (on-demand, not queued) | |
-
-Workers are triggered via HTTP calls to the FastAPI server, which enqueues jobs into RabbitMQ, or via direct function calls. The REST endpoints themselves handle the async dispatch.
-
----
-
-## 12. Frontend Routes
+## Frontend Routes
 
 | Route | Description |
 |-------|-------------|
-| `/login` | Authentication — login |
-| `/register` | Authentication — registration |
-| `/dashboard` | Overview: tender count, system status, recent tenders, quick actions |
-| `/dashboard/tenders` | Tender library: list all documents, upload button, status badges |
-| `/dashboard/tenders/new` | Upload new tender document |
-| `/dashboard/tenders/[id]/overview` | Document metadata, file info, processing status |
-| `/dashboard/tenders/[id]/qualification` | Compliance score card, go/no-go, per-clause status, re-check button |
-| `/dashboard/tenders/[id]/response` | RAG-grounded Q&A, response generation, draft editing |
-| `/dashboard/tenders/[id]/ask` | RAG chat interface — ask questions about the tender |
-| `/dashboard/tenders/[id]/exports` | Export management — create, list, download DOCX files |
-| `/dashboard/company/profile` | Company profile view and edit |
-| `/dashboard/company/credentials` | Credential/document annexes management |
-| `/dashboard/activity` | System status and activity logs |
+| `/` | Landing page |
+| `/login`, `/register` | Authentication (Supabase) |
+| `/dashboard` | Overview: stats, recent tenders, quick actions |
+| `/dashboard/tenders` | Tender library |
+| `/dashboard/tenders/new` | Upload a tender |
+| `/dashboard/tenders/{id}/overview` | Document metadata and processing timeline |
+| `/dashboard/tenders/{id}/qualification` | Compliance score, go/no-go, clause checklist |
+| `/dashboard/tenders/{id}/response` | Draft response editor |
+| `/dashboard/tenders/{id}/ask` | RAG chat |
+| `/dashboard/tenders/{id}/exports` | Export management |
+| `/dashboard/company/profile` | Company profile |
+| `/dashboard/company/credentials` | Credentials/annexes |
+| `/dashboard/activity` | System health and activity |
 
 ---
 
-## 13. Troubleshooting
+## Getting Started
 
-### "Failed to fetch" on tenders page
+### Prerequisites
+- Node.js 20+
+- Python 3.11+
+- Docker (for RabbitMQ, Redis, and optionally local Supabase)
 
-Most likely a CORS or API URL misconfiguration. Verify:
-1. `NEXT_PUBLIC_API_URL` in `.env.local` matches the running backend (e.g., `http://localhost:8100` for local, `http://api:8100/api/v1` for Docker).
-2. `API_ALLOWED_ORIGINS` in the backend `.env` includes the frontend origin.
-3. Run `docker compose logs web` and `docker compose logs api` to check for errors.
-
-### RabbitMQ connection refused
-
-Ensure the RabbitMQ container is running:
+### Option 1 — Docker (full stack)
 ```bash
-docker compose -f docker-compose.app.yml ps rabbitmq
+docker compose -f docker-compose.app.yml up --build -d
 ```
-If stopped, remove and restart:
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| API | http://localhost:8100 |
+| API docs | http://localhost:8100/docs |
+| RabbitMQ UI | http://localhost:15672 (admin/admin) |
+
+> Workers are not part of the default compose file; start them separately for full pipeline processing.
+
+### Option 2 — Local development
 ```bash
-docker compose -f docker-compose.app.yml down
-docker compose -f docker-compose.app.yml up -d
+# Backend
+cd apps/api
+python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn src.app:app --reload --port 8100
+
+# Frontend (new terminal)
+cd apps/web
+npm install
+npm run dev
 ```
 
-### Port already in use
+Detailed local testing steps: see [`docs/LOCAL_TESTING.md`](docs/LOCAL_TESTING.md).
 
-If ports conflict with existing containers, edit `docker-compose.app.yml`:
-```yaml
-ports:
-  - "3001:3000"    # change host port for web
-  - "8101:8100"    # change host port for api
-```
+---
 
-### Document stuck in processing state
+## Environment Variables
 
-Check worker logs:
+### Backend (`apps/api/.env`)
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key |
+| `API_ALLOWED_ORIGINS` | Comma-separated CORS origins |
+| `RABBITMQ_URL` | AMQP connection URL |
+| `REDIS_URL` | Redis connection URL |
+| `MISTRAL_API_KEY` | Mistral (OCR) key |
+| `GROQ_API_KEY` | Groq (LLM) key |
+| `HF_TOKEN` | Hugging Face token (embeddings) |
+| `LANGCHAIN_EMBEDDING_MODEL` | Embedding model id (default `BAAI/bge-m3`) |
+| `LANGCHAIN_GROQ_METADATA_MODEL` | Metadata-extraction model id |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `NOTIFICATION_RECIPIENT_EMAIL` | Email notifications |
+| `WEB_BASE_URL` | Frontend base URL (for links) |
+
+### Frontend (`apps/web/.env.local`)
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | Backend base URL (default `http://localhost:8100`; client normalizes to `/api/v1`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+
+---
+
+## Project Status
+
+A real backend engine backs a demo-mode frontend. Maturity by layer:
+
+| Layer | Status | Notes |
+|-------|--------|-------|
+| AI service pipeline | Done | OCR, NLP, embeddings, RAG, LLM, export, notification implemented |
+| Database schema | Done | 13 migrations, pgvector + HNSW |
+| API surface | Partial | Most endpoints live; auth/tenant + a few stubs pending |
+| Frontend | Demo | Pages render with mock data; backend wiring is in progress |
+| Auth | In progress | Supabase forms present; session/route-guard/JWT in progress |
+| Tests / CI | Planned | Not yet implemented |
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full gap analysis and plan.
+
+## Roadmap
+
+High-level next milestones:
+1. Wire frontend pages to the live API (with mock fallback).
+2. Authentication and multi-tenant authorization end-to-end.
+3. Complete remaining stubs (annexes, activity log, RAG history).
+4. Automated tests and CI.
+5. DevOps deployment and observability (see [`docs/DEVOPS_PLAN.md`](docs/DEVOPS_PLAN.md)).
+
+---
+
+## Verification
+
 ```bash
-docker compose logs api | grep -i "worker"
+# Backend syntax
+python -m compileall -q apps/api/src
+
+# Frontend typecheck + production build
+cd apps/web && npx tsc --noEmit && npx next build
 ```
-Ensure workers are running. Processing status transitions: `uploaded` → `reading` → `indexing` → `qualifying` → `qualified` → `generating` → `completed` (or `failed`).
+All three currently pass.
 
-### API returns 500 on topology
+---
 
-This indicates the RabbitMQ management API is not reachable from inside the API container. Ensure `RABBITMQ_URL` is set correctly in `apps/api/.env` and matches the compose service name.
+## Design Decisions
 
-### Web build fails with `EBADPLATFORM`
+- **Modular monolith over microservices** — nine clear service domains within one deployable; extracted to services only when a boundary demands independent scaling.
+- **Supabase (Postgres + pgvector) over a dedicated vector DB** — one store for relational + vector data, fewer moving parts.
+- **Event-driven pipeline** — long-running OCR/embedding work is decoupled from HTTP request latency; workers scale independently.
+- **Hybrid rules + LLM compliance** — deterministic rule evaluation for auditability, LLM assistance for language-heavy clauses.
+- **Citations everywhere** — RAG answers and generated responses always reference source clauses to preserve trust and auditability.
 
-The `package.json` must not include platform-specific `@next/swc-*` packages. The `package.json` ships with a pure Node.js frontend and uses Next.js's built-in compiler (Turbopack). Do not add `@next/swc-win32-x64-msvc` or similar.
+---
+
+## Author
+
+**Wassim Hajji**
+- GitHub: [@wassimhajjijunior](https://github.com/wassimhajjijunior)
+- LinkedIn: [linkedin.com/in/hajji-wassim](https://linkedin.com/in/hajji-wassim)
+
+---
+
+<sub>Built with FastAPI, Next.js, Supabase, pgvector, RabbitMQ, and LangChain.</sub>
